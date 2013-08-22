@@ -98,19 +98,19 @@ class Thycotic
     end
 
     # Make sure that a short-term and long-term file cache is available.
-    if not @cache_path.nil?
+    if not @params[:cache_path].nil?
       puts "Initializing short-term cache in" \
-           " #{@cache_path}/#{SHORT_TERM_CACHE_NAME} with timeout" \
+           " #{@params[:cache_path]}/#{SHORT_TERM_CACHE_NAME} with timeout" \
            " #{SHORT_TERM_CACHE_TIMEOUT} seconds" if @params[:debug]
       @cache = FileCache.new(SHORT_TERM_CACHE_NAME,
-                             @cache_path,
+                             @params[:cache_path],
                              SHORT_TERM_CACHE_TIMEOUT)
 
       puts "Initializing long-term cache in" \
-           " #{@cache_path}/#{LONG_TERM_CACHE_NAME} with timeout" \
+           " #{@params[:cache_path]}/#{LONG_TERM_CACHE_NAME} with timeout" \
            " #{LONG_TERM_CACHE_TIMEOUT} seconds" if @params[:debug]
       @long_term_cache = FileCache.new(LONG_TERM_CACHE_NAME,
-                                       @cache_path,
+                                       @params[:cache_path],
                                        LONG_TERM_CACHE_TIMEOUT)
     end
 
