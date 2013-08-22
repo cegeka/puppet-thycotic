@@ -99,7 +99,7 @@ def init(custom_config=nil)
 
   # Now look for optional variables. If they're found, use them. If not, use
   # some defaults
-  config[:serviceurl] = @cfg_file['url'] if not @cfg_file['url'].nil?
+  config[:serviceurl] = @cfg_file['wsdl'] if not @cfg_file['wsdl'].nil?
   config[:cache_path] = @cfg_file['cache_path'] if not @cfg_file['cache_path'].nil?
   config[:debug]      = true if @cfg_file['debug'] == 'true'
 
