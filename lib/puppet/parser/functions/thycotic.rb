@@ -180,74 +180,6 @@ class Thycotic
   end
 
   def getSecret(secretid)
-    # The logic here is that our secrets change very rarely.. therefore we'd rather pull from
-    # cache almost every time than go out to the remote service and get the secret content. The
-    # flow is this:
-    #
-    # is item in cache and not expired?
-    # .. no?
-    # .. .. Get item from API. Cache item. Successfull?
-    # .. .. no? try returning item from long_term_cache
-    # .. .. yes? return item from api, update cache.
-    # .. yes?
-    # .. .. return item from cache
-    #
-    if @cache.get(secretid) == nil
-      # Get the item from API...
-      begin
-        token = getToken()
-        url = "#{@serviceurl}/GetSecret?token=#{token}&secretId=#{secretid}"
-        puts "getSecret(#{secretid}): calling makeRequest(#{url})\n" if @debug
-        data = makeRequest(url)
-
-        # We get a massive hash returned from Thyucotic.. strip it down
-        secret_hash = {}
-        data['Secret'][0]['Items'][0]['SecretItem'].each do |secret|
-          if secret.has_key?('FieldDisplayName')
-            # In the event that we're looking at a File resource, we need to download the file.
-            if secret['IsFile'][0] == 'true'
-              content = getFile(secretid,secret['Id'][0],token)
-            else
-              content = secret['Value'][0]
-            end
-
-            if content != false
-              puts "getSecret(#{secretid}): Got content for secret '#{secret['FieldDisplayName'][0]}'...\n" if @debug
-              secret_hash[secret['FieldDisplayName'][0]] = content
-            end
-          end
-        end
-
-        # Never cache a 'nil' result. Ever.
-        if secret_hash != nil
-          # Now that we have the item, cache it.. then return it. We cache in two
-          # caches because one is used as a 'backup' in case the API service is unavailable
-          # for a long period of time.
-          puts "getSecret(#{secretid}): Caching secret '#{secretid}'...\n" if @debug
-          @cache.set(secretid,secret_hash.to_yaml)
-          @long_term_cache.set(secretid,secret_hash.to_yaml)
-          return secret_hash
-        else
-          raise "Retrieved secret was 'nil'. Invalid."
-        end
-      rescue Exception=>e
-        # Last shot.. item was not in our regular cache, AND we couldn't get it
-        # from the API service, so lets attempt to find it in our long term cache.
-	begin
-          puts "getSecret(#{secretid}): Secret unavailable from remote service (#{e}). Found secret in long-term cache. Returning Secret....\n" if @debug
-          return YAML::load(@long_term_cache.get(secretid))
-	rescue Exception =>e
-	  raise "Could not retrieve secret from short or long_term cache, or the API services. Please troubleshoot: #{e}"
-	end
-      end
-    else
-      # The item was found in the cache...
-      puts "getSecret(#{secretid}): Secret found in short-term cache... Returning Secret....\n" if @debug
-      return YAML::load(@cache.get(secretid))
-    end
-  end
-
-  def checkToken(token)
     # * *Args*:
     #   - +secretid+ -> Secret ID to retrieve
     #
@@ -423,14 +355,14 @@ class Thycotic
         raise
       end
 
+      # Save the token to our local object to prevent getting it again
+      @token = token
+
       # Before returning the token, cache it (if there is a local cache)
       if not @cache.nil?
         puts "Saving token to cache..." if @params[:debug]
         @cache.set('token', @token)
       end
-
-      # Save the token to our local object to prevent getting it again
-      @token = token
 
       # Now return the token
       return token
