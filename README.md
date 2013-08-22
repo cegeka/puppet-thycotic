@@ -72,14 +72,14 @@ Puppet modules path, and create the configuration file.
 Create the configuration file `/etc/puppet/thycotic.conf`
 
     # Default configuration parameters
-    user = username
+    username = username
     password = password
     orgcode = orgCode
     
     # Optional parameters (defaults shown here)
     # debug = false
     # cache_path = /tmp
-    # url = file:///<path to your module>/lib/puppet/parser/functions/WSDL
+    # wsdl = file:///<path to your module>/lib/puppet/parser/functions/WSDL
     
 The configuration file can be located in three places by default. It is searched
 for in the following order:
