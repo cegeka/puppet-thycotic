@@ -37,4 +37,4 @@ git config branch.master.rebase true
 git config branch.autosetuprebase remote
 
 # Configure git-change.
-git config git-change.gerrit-ssh-host review
+git config git-change.gerrit-ssh-host review.opensource.nextdoor.com
