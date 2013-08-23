@@ -198,11 +198,17 @@ class Thycotic
     #
 
     # First do a quick check and see if the cache is enabled, and if the
-    # item exists in the cache already.
-    if not @cache.nil? and not @cache.get(secretid).nil?
-      # The item was found in the cache...
-      puts "Found Secret ID #{secretid} in short term cache." if @params[:debug]
-      return YAML::load(@cache.get(secretid))
+    # item exists in the cache already. Wrap this in a begin/rescue block
+    # so that if the short term cache is failing for some reason, we still
+    # attempt to use the API services.
+    begin
+      if not @cache.nil? and not @cache.get(secretid).nil?
+        # The item was found in the cache...
+        puts "Found Secret ID #{secretid} in short term cache." if @params[:debug]
+        return YAML::load(@cache.get(secretid))
+      end
+    rescue Exception =>e
+      puts "Short-term cache access failed (will try the API...): #{e}"
     end
 
     # Get the item from API... Wrap the entire thing in a big begin/rescue
@@ -241,55 +247,68 @@ class Thycotic
 
       # Now for each element returned in the SecretItems XML section add
       # it to the above hash.
-     resp['GetSecretResult']['Secret']['Items']['SecretItem'].each do |s|
-
+      resp['GetSecretResult']['Secret']['Items']['SecretItem'].each do |s|
         # Make sure the secret supplied has a field name... if not, then
         # its likely bogus data.
         if not s['FieldDisplayName'].nil?
 
-          # In the event that we're looking at a File resource, we need to download the file.
+          # In the event that we're looking at a File resource, we need to
+          # download the file.
           if s['IsFile'] == 'true'
             content = getFile(secretid, s['Id'])
           else
             content = s['Value']
           end
 
-          # If the content is 'nil', then the secret cannot possibly have held a value, so it
-          # msut be bogus return data. Even an empty secret will return a blank string.
+          # If the content is 'nil', then the secret cannot possibly have
+          # held a value, so it must be bogus return data. Even an empty
+          # secret will return a blank string.
           if not content.nil?
-            puts "Got secret content for Secret ID (#{secretid}/#{s['FieldDisplayName']})...\n" if @params[:debug]
+            puts "Got secret content for Secret ID " \
+                 "(#{secretid}/#{s['FieldDisplayName']})...\n" if @params[:debug]
             secret_hash[s['FieldDisplayName']] = content
           end
         end
-       end
-
-     # If no secret data was returned at all, something bad happened
-     if secret_hash.nil?
-        raise "Retrieved secret was 'nil'. Invalid."
-     end
-
-     # If the cache is enabled, then cache the secret_hash data.
-     if not @cache.nil? and not @long_term_cache.nil?
-       puts "Caching Secret ID '#{secretid}'...\n" if @params[:debug]
-        @cache.set(secretid,secret_hash.to_yaml)
-        @long_term_cache.set(secretid,secret_hash.to_yaml)
       end
 
-      # If we made it here, return the secret_hash data
-      return secret_hash
-
+      # If no secret data was returned at all, something bad happened
+      if secret_hash.nil?
+        raise "Retrieved secret was 'nil'. Checking Long Term Cache."
+      end
     rescue Exception=>e
       # Last shot.. item was not in our regular cache, AND we couldn't get it
       # from the API service, so lets attempt to find it in our long term cache.
-      puts "Secret ID #{secretid} unavailable from API: #{e}" if @params[:debug]
+      puts "Secret ID #{secretid} unavailable from API. Checking long term " \
+           "cache. Error was: : #{e}" if @params[:debug]
       begin
         secret_hash = YAML::load(@long_term_cache.get(secretid))
-        puts "Found secret in long-term cache.\n"
+        # We return here so that we don't take our value from the long_term cache
+        # and store it in the short_term cache below. Pulling from our long_term
+        # cache is our last resort.
+        puts "Found Secret ID #{secretid} in long term cache.\n"
+        return secret_hash
       rescue Exception =>e
-        raise "Could not retrieve secret from short or long_term cache, " \
+        raise "Could not retrieve secret from short or long term cache, " \
               "or the API services. Please troubleshoot: #{e}"
       end
     end
+
+    # If the cache is enabled, then cache the secret_hash data.
+    #
+    # This operations is not critical to the function of the plugin, so if it
+    # fails we simply throw a warning and move on.
+    begin
+      if not @cache.nil? and not @long_term_cache.nil?
+        puts "Caching Secret ID '#{secretid}'...\n" if @params[:debug]
+        @cache.set(secretid,secret_hash.to_yaml)
+        @long_term_cache.set(secretid,secret_hash.to_yaml)
+      end
+    rescue Exception =>e
+      puts "Could not cache #{secretid}: #{e}." if @params[:debug]
+    end
+
+    # If we made it here, return the secret_hash data
+    return secret_hash
   end
 
   def getToken()
