@@ -31,12 +31,13 @@
 #   secret = thycotic.getSecret(secretid)
 #
 
-require 'rubygems'
+require 'base64'
+require 'etc'
 require 'filecache'
+require 'puppet'
+require 'rubygems'
 require 'timeout'
 require 'yaml'
-require 'base64'
-require 'puppet'
 
 
 # Loading the soap4r gem. This gem overrides the way SSL errors are
@@ -50,6 +51,9 @@ SHORT_TERM_CACHE_NAME='thycotic'
 LONG_TERM_CACHE_TIMEOUT=108000
 LONG_TERM_CACHE_NAME='thycotic-long-term'
 CACHE_PATH='/tmp'
+CACHE_DEFAULT_OWNER='puppet'
+CACHE_DEFAULT_GROUP='puppet'
+CACHE_DEFAULT_MODE=0750
 
 # For reliability during startup we store a local copy of the Secret Server
 # SOAP file named 'WSDL'. This is the default file used during startup and
@@ -81,9 +85,12 @@ class Thycotic
   def initialize(params)
     # Fill in any missing parameters to the supplied parameters hash
     @params = params
-    @params[:serviceurl] ||= SERVICEURL
-    @params[:cache_path] ||= CACHE_PATH
-    @params[:debug]      ||= false
+    @params[:serviceurl]  ||= SERVICEURL
+    @params[:cache_path]  ||= CACHE_PATH
+    @params[:debug]       ||= false
+    @params[:cache_owner] ||= CACHE_DEFAULT_OWNER
+    @params[:cache_group] ||= CACHE_DEFAULT_GROUP
+    @params[:cache_mode]  ||= CACHE_DEFAULT_MODE
 
     # If debug logging is enabled, we log out our entire parameters dict,
     # including the password/username that were supplied. Debug mode is
@@ -103,24 +110,51 @@ class Thycotic
 
     # Make sure that a short-term and long-term file cache is available.
     if not @params[:cache_path].nil?
-      log("Initializing short-term cache in" \
-           " #{@params[:cache_path]}/#{SHORT_TERM_CACHE_NAME} with timeout" \
-           " #{SHORT_TERM_CACHE_TIMEOUT} seconds")
-      @cache = FileCache.new(SHORT_TERM_CACHE_NAME,
-                             @params[:cache_path],
-                             SHORT_TERM_CACHE_TIMEOUT)
+      @cache = _init_cache(
+        'short-term', SHORT_TERM_CACHE_NAME, SHORT_TERM_CACHE_TIMEOUT)
 
-      log("Initializing long-term cache in" \
-           " #{@params[:cache_path]}/#{LONG_TERM_CACHE_NAME} with timeout" \
-           " #{LONG_TERM_CACHE_TIMEOUT} seconds")
-      @long_term_cache = FileCache.new(LONG_TERM_CACHE_NAME,
-                                       @params[:cache_path],
-                                       LONG_TERM_CACHE_TIMEOUT)
+      @long_term_cache = _init_cache(
+        'long-term', LONG_TERM_CACHE_NAME, LONG_TERM_CACHE_TIMEOUT)
     end
 
     # Initialize the SOAP driver -- all uses of the driver call getDriver()
     # but this pre-initializes it at the first use of this object.
     getDriver()
+  end
+
+  def _init_cache(description, cache_name, cache_timeout)
+    # * *Args*:
+    #   - +description+   -> Human readable name. Only used for logs.
+    #   - +cache_name+    -> Filename of the cache. Does not include path.
+    #   - +cache_timeout+ -> Seconds to keep cache values valid.
+    #
+    # * *Raises*:
+    #   - ArgumentError for getpwnam and getgrnam if user/group does not exist
+    #   - Errno::EPERM for chown and chmod if operation is not permitted.
+    #
+    # * *Returns*:
+    #   - Newly created descriptor of the FileCache()
+    #
+    cache_file = @params[:cache_path] + '/' + cache_name
+
+    log("Initializing `%s` cache in %s with timeout %s" % [
+      description, cache_file, cache_timeout])
+
+    # Create the file, set ownership and mode.
+    cache = FileCache.new(cache_name, @params[:cache_path], cache_timeout)
+    _update_cache_permissions(cache_file)
+    return cache
+  end
+
+  def _update_cache_permissions(cache_file)
+    # * *Args*:
+    #   - +cache_file+ -> File descriptor for which to change mode and owner
+    #
+    owner = Etc.getpwnam(@params[:cache_owner]).uid
+    group = Etc.getgrnam(@params[:cache_group]).gid
+
+    FileUtils.chmod(@params[:cache_mode], cache_file)
+    FileUtils.chown_R(owner, group, cache_file)
   end
 
   def getSecret(secretid)
@@ -177,9 +211,10 @@ class Thycotic
     cache_name = cache.instance_variable_get("@root")
 
     # Attempt to get the Secret ID from the cache now
+    log("Getting #{secretid} from #{cache_name}")
     begin
       return YAML::load(cache.get(secretid))
-    rescue Exception =>e
+    rescue Exception => e
       log("Secret ID #{secretid} not found in #{cache_name}.")
       return false
     end
@@ -198,6 +233,7 @@ class Thycotic
 
     # Make sure that the three values were supplid. If any are Nil,
     # log and exit safely.
+    log("Saving #{secretid} : #{secretvalue} on #{cache}")
     if secretid.nil?
       log("Secret ID cannot be Nil!")
       return
@@ -221,6 +257,8 @@ class Thycotic
     rescue Exception =>e
       log("Failed saving Secret ID #{secretid} to #{cache_name}: #{e}.")
     end
+
+    _update_cache_permissions(cache_name)
   end
 
   def getAndCacheSecretFromAPI(secretid)
