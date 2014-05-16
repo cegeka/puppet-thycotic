@@ -29,7 +29,6 @@
 
 require 'rubygems'
 require 'parseconfig'
-require 'socket'
 require File.join(File.dirname(__FILE__), 'thycotic.rb')
 
 # We will store our single Thycotic object here once its created
