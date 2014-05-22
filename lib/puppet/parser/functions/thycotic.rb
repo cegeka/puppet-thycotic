@@ -30,14 +30,12 @@
 #      } )
 #   secret = thycotic.getSecret(secretid)
 #
-
 require 'rubygems'
+require 'base64'
 require 'filecache'
 require 'timeout'
+require 'logging'
 require 'yaml'
-require 'base64'
-require 'puppet'
-
 
 # Loading the soap4r gem. This gem overrides the way SSL errors are
 # handled in the SOAP code.
@@ -79,6 +77,9 @@ class Thycotic
   #     - +cache_path+ -> Filesystem location to cache results (default: /tmp)
   #
   def initialize(params)
+    @log = Logging.logger[self]
+    @log.info('Thycotic class initializing...')
+
     # Fill in any missing parameters to the supplied parameters hash
     @params = params
     @params[:serviceurl] ||= SERVICEURL
@@ -90,7 +91,7 @@ class Thycotic
     # dangerous and meant to only be used during troubleshooting.
     @params.each do |k,v|
       if k != :password
-        log("Initialization params: #{k} => #{v}")
+        @log.info("Initialization params: #{k} => #{v}")
       end
     end
 
@@ -103,14 +104,14 @@ class Thycotic
 
     # Make sure that a short-term and long-term file cache is available.
     if not @params[:cache_path].nil?
-      log("Initializing short-term cache in" \
+      @log.info("Initializing short-term cache in" \
            " #{@params[:cache_path]}/#{SHORT_TERM_CACHE_NAME} with timeout" \
            " #{SHORT_TERM_CACHE_TIMEOUT} seconds")
       @cache = FileCache.new(SHORT_TERM_CACHE_NAME,
                              @params[:cache_path],
                              SHORT_TERM_CACHE_TIMEOUT)
 
-      log("Initializing long-term cache in" \
+      @log.info("Initializing long-term cache in" \
            " #{@params[:cache_path]}/#{LONG_TERM_CACHE_NAME} with timeout" \
            " #{LONG_TERM_CACHE_TIMEOUT} seconds")
       @long_term_cache = FileCache.new(LONG_TERM_CACHE_NAME,
@@ -180,7 +181,7 @@ class Thycotic
     begin
       return YAML::load(cache.get(secretid))
     rescue Exception =>e
-      log("Secret ID #{secretid} not found in #{cache_name}.")
+      @log.info("Secret ID #{secretid} not found in #{cache_name}.")
       return false
     end
   end
@@ -199,15 +200,15 @@ class Thycotic
     # Make sure that the three values were supplid. If any are Nil,
     # log and exit safely.
     if secretid.nil?
-      log("Secret ID cannot be Nil!")
+      @log.info("Secret ID cannot be Nil!")
       return
     end
     if cache.nil?
-      log("Caching disabled, not storing Secret ID #{secretid}")
+      @log.info("Caching disabled, not storing Secret ID #{secretid}")
       return
     end
     if secretvalue.nil?
-      log("Missing value for Secret ID #{secretid}. Not storing.")
+      @log.info("Missing value for Secret ID #{secretid}. Not storing.")
       return
     end
 
@@ -216,10 +217,10 @@ class Thycotic
 
     # Now try to save the secret to the cache. If it fails, just return.
     begin
-      log("Saving Secret ID '#{secretid}' to #{cache_name}...\n")
+      @log.info("Saving Secret ID '#{secretid}' to #{cache_name}...\n")
       cache.set(secretid,secretvalue.to_yaml)
     rescue Exception =>e
-      log("Failed saving Secret ID #{secretid} to #{cache_name}: #{e}.")
+      @log.info("Failed saving Secret ID #{secretid} to #{cache_name}: #{e}.")
     end
   end
 
@@ -293,14 +294,14 @@ class Thycotic
           # held a value, so it must be bogus return data. Even an empty
           # secret will return a blank string.
           if not content.nil?
-            log("Got secret content for Secret ID " \
+            @log.info("Got secret content for Secret ID " \
                  "(#{secretid}/#{s['FieldDisplayName']})...\n")
             secret_hash[s['FieldDisplayName']] = content
           end
         end
       end
     rescue Exception =>e
-      log("Error retrieving Secret ID #{secretid} from API service: #{e}")
+      @log.info("Error retrieving Secret ID #{secretid} from API service: #{e}")
       return false
     end
 
@@ -347,7 +348,7 @@ class Thycotic
       if error.to_s == 'File attachment not found.'
         # There is no atual data to return, but this is not a bad thing. There simply is no
         # key... so return false.
-        log("SecretItemId #{fileid} empty, returning empty string.")
+        @log.info("SecretItemId #{fileid} empty, returning empty string.")
         return ''
       end
 
@@ -359,31 +360,18 @@ class Thycotic
       # Return the Base64 decoded contents of the FileAttachment data
       encoded_contents = resp['DownloadFileAttachmentByItemIdResult']['FileAttachment']
       decoded_contents = Base64.decode64(encoded_contents).to_s
-      log("SecretItemId #{fileid} file retrieved...\n")
+      @log.info("SecretItemId #{fileid} file retrieved...\n")
       return decoded_contents
     rescue Exception=>e
-      log("SecretItemId #{fileid} retrieval failed: #{e}")
+      @log.info("SecretItemId #{fileid} retrieval failed: #{e}")
       if tries < max_tries
         tries = tries + 1
-        log("(#{tries}/#{max_tries}) Trying again...")
+        @log.info("(#{tries}/#{max_tries}) Trying again...")
         retry
       end
 
       # If we tried too many times, raise an exception.
       raise "SecretItemId #{fileid} retrieval failed too many times: #{e}"
-    end
-  end
-
-  def log(msg)
-    # Reports a log messsage if debugging is enabled
-    #
-    # * *Args*:
-    #   - +msg+ -> String contents of the message to report
-    #
-    if @params[:debug]
-      Puppet.warning(msg)
-    else
-      Puppet.debug(msg)
     end
   end
 
@@ -420,10 +408,10 @@ class Thycotic
       # Now, check if the token is valid or not...
       resp = getDriver().GetTokenIsValid(:token => @token)
       if resp['GetTokenIsValidResult']['Errors']['string'].nil?
-        log("Found valid token")
+        @@log.info("Found valid token")
         return @token
       else
-        log("Found expired token in cache, fetching new...")
+        @log.info("Found expired token in cache, fetching new...")
         raise
       end
     rescue
@@ -440,12 +428,12 @@ class Thycotic
       begin
         data = getDriver().Authenticate(parameters)
         token = data['AuthenticateResult']['Token']
-        log("Fetched new token #{token}...")
+        @log.info("Fetched new token #{token}...")
       rescue Exception=>e
-        log("Could not retrieve authentication token: #{e}")
+        @log.info("Could not retrieve authentication token: #{e}")
         if tries < max_tries
           tries = tries + 1
-          log("#{tries}/#{max_tries}) Trying again...")
+          @log.info("#{tries}/#{max_tries}) Trying again...")
           retry
         end
         raise 'Failed to retrieve token.'
@@ -456,7 +444,7 @@ class Thycotic
 
       # Before returning the token, cache it (if there is a local cache)
       if not @cache.nil?
-        log("Saving token to cache...")
+        @log.info("Saving token to cache...")
         @cache.set('token', @token)
       end
 
@@ -490,13 +478,13 @@ class Thycotic
       @driver = SOAP::WSDLDriverFactory.new(@params[:serviceurl]).create_rpc_driver
       return @driver
     rescue Exception=>e
-      log("Could not create SOAP Driver from URL #{@params[:serviceurl]}: #{e}")
+      @log.info("Could not create SOAP Driver from URL #{@params[:serviceurl]}: #{e}")
       if tries < max_tries
         tries = tries + 1
-        log("(#{tries}/#{max_tries}) Trying again...")
+        @log.info("(#{tries}/#{max_tries}) Trying again...")
         retry
       end
-      log("Failed to log into #{@params[:serviceurl]}. Returning 'nil' object for now.")
+      @log.info("Failed to log into #{@params[:serviceurl]}. Returning 'nil' object for now.")
       return nil
     end
   end
