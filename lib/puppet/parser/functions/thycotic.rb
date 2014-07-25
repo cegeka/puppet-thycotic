@@ -46,7 +46,7 @@ gem 'soap4r'
 require 'soap/wsdlDriver'
 
 # Some static variables that control the overall behavior of the module
-SHORT_TERM_CACHE_TIMEOUT=1800
+SHORT_TERM_CACHE_TIMEOUT=21600  # 6 hours
 SHORT_TERM_CACHE_NAME='thycotic'
 LONG_TERM_CACHE_TIMEOUT=108000
 LONG_TERM_CACHE_NAME='thycotic-long-term'
