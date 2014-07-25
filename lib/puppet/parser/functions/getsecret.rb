@@ -149,6 +149,7 @@ module Puppet::Parser::Functions
     end
 
     # Now request our secret
+    debug "#{lookupvar('fqdn')} requested #{secret_id}"
     secret = @thycotic.getSecret(secret_id)
 
     # Walk through the returned elements of the hash, and look for the one we want.

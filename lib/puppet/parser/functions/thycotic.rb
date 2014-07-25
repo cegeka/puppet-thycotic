@@ -233,7 +233,7 @@ class Thycotic
 
     # Make sure that the three values were supplid. If any are Nil,
     # log and exit safely.
-    log("Saving #{secretid} : #{secretvalue} on #{cache}")
+    log("Saving #{secretid} on #{cache}")
     if secretid.nil?
       log("Secret ID cannot be Nil!")
       return
