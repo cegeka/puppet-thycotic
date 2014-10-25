@@ -155,12 +155,12 @@ module Puppet::Parser::Functions
     # Walk through the returned elements of the hash, and look for the one we want.
     if secret.has_key?(secret_name)
       if secret.has_key?(secret_name) == nil
-        raise Puppet::ParseError, "Secret returned by Thycotic.getSecret(#{secretid}) was 'nil'. This is bad, erroring out."
+        raise Puppet::ParseError, "Secret returned by Thycotic.getSecret(#{secret_id}) was 'nil'. This is bad, erroring out."
       else
         return secret[secret_name].to_s
       end
     end
 
-    raise Puppet::ParseError, "Could not retrieve SecretID #{secretid}."
+    raise Puppet::ParseError, "Could not retrieve SecretID #{secret_id}."
   end
 end
