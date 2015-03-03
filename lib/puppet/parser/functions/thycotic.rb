@@ -312,9 +312,16 @@ class Thycotic
       # Define the new Hash
       secret_hash = Hash.new
 
+      # Grab the returned data. If its an array, fine. If its not an array,
+      # wrap it in one just so the .each statemebt below works.
+      secrets = resp['GetSecretResult']['Secret']['Items']['SecretItem']
+      unless secrets.kind_of?(Array)
+        secrets = [secrets]
+      end
+
       # Now for each element returned in the SecretItems XML section add
       # it to the above hash.
-      resp['GetSecretResult']['Secret']['Items']['SecretItem'].each do |s|
+      secrets.each do |s|
         # Make sure the secret supplied has a field name... if not, then
         # its likely bogus data.
         if not s['FieldDisplayName'].nil?
