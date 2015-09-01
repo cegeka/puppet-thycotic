@@ -288,7 +288,7 @@ class Thycotic
     begin
       params = {
         :token    => getToken(),
-        :secretId => secretid,
+        :secretId => secretid.to_i,
       }
       resp = getDriver().GetSecret(params)
 
