@@ -26,6 +26,7 @@
 #      :username => 'user',
 #      :password => 'password',
 #      :orgcode  => 'orgcode',
+#      :domain   => 'domain',
 #      :debug    => true,
 #      } )
 #   secret = thycotic.getSecret(secretid)
@@ -58,6 +59,7 @@ CACHE_PATH='/tmp'
 CACHE_DEFAULT_OWNER='puppet'
 CACHE_DEFAULT_GROUP='puppet'
 CACHE_DEFAULT_MODE=0750
+DOMAIN_DEFAULT=''
 
 # For reliability during startup we store a local copy of the Secret Server
 # SOAP file named 'WSDL'. This is the default file used during startup and
@@ -95,6 +97,7 @@ class Thycotic
     @params[:cache_owner] ||= CACHE_DEFAULT_OWNER
     @params[:cache_group] ||= CACHE_DEFAULT_GROUP
     @params[:cache_mode]  ||= CACHE_DEFAULT_MODE
+    @params[:domain]      ||= DOMAIN_DEFAULT
 
     # If debug logging is enabled, we log out our entire parameters dict,
     # including the password/username that were supplied. Debug mode is
@@ -481,7 +484,7 @@ class Thycotic
         :username     => @params[:username],
         :password     => @params[:password],
         :organization => @params[:orgcode],
-        :domain       => '',
+        :domain       => @params[:domain],
       }
 
       tries=0
