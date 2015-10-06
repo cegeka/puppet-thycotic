@@ -102,6 +102,7 @@ def init(custom_config=nil)
   # some defaults
   config[:serviceurl] = @cfg_file['wsdl'] if not @cfg_file['wsdl'].nil?
   config[:cache_path] = @cfg_file['cache_path'] if not @cfg_file['cache_path'].nil?
+  config[:domain]     = @cfg_file['domain'] if not @cfg_file['domain'].nil?
   config[:debug]      = true if @cfg_file['debug'] == 'true'
 
   # Create the Thycotic API object

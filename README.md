@@ -80,7 +80,11 @@ Create the configuration file `/etc/puppet/thycotic.conf`
     # debug = false
     # cache_path = /tmp
     # wsdl = file:///<path to your module>/lib/puppet/parser/functions/WSDL
-    
+    # domain =
+
+Orgcode is only required if you are using the Online Thycotic Secret Server edition,
+it can be empty if you are using a local installed edition.
+
 The configuration file can be located in three places by default. It is searched
 for in the following order:
 
