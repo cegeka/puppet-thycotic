@@ -1,9 +1,11 @@
 require 'rubygems'
-require 'rspec/core/rake_task'
+require 'rake'
 
-RSpec::Core::RakeTask.new(:spec) do |t|
-  t.pattern = 'spec/*/*_spec.rb'
-  t.rspec_opts = "--format d --color"
+task_dir = File.expand_path("../tasks", __FILE__)
+
+FileList["#{task_dir}/**/*.rake"].each { |fn| load fn }
+
+desc "Default task prints the available targets."
+task :default do
+  sh %{rake -T}
 end
-
-task :default => :spec
