@@ -17,6 +17,8 @@ if RUBY_VERSION == "1.8.7"
 
   # https://github.com/rspec/rspec-core/issues/1864
   gem 'rspec', '= 3.1.0'
+elsif RUBY_VERSION == "2.0.0"
+  gem 'soap4r-ng'
 else
   gem 'soap4r-ruby1.9'
   gem 'rspec-puppet'
