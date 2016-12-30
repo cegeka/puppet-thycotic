@@ -44,7 +44,7 @@ require 'yaml'
 # Loading the soap4r gem. This gem overrides the way SSL errors are
 # handled in the SOAP code.
 begin
-  gem 'soap4r'
+  gem 'soap4r-ng'
 rescue LoadError
   gem 'soap4r-ruby1.9'
 end
