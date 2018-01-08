@@ -118,3 +118,4 @@ intensive.
     file { '/etc/mypassword':
       content => getsecret('12345', 'plaintext_password', '/etc/thycotic.conf')
     }
+
