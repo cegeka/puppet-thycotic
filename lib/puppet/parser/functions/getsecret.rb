@@ -54,7 +54,7 @@ def init(custom_config=nil)
   # * *Returns*:
   #   A Thycotic object that has been fully configured
   #
-  
+
   # By default, this method looks for the thycotic.conf file in the following
   # filesystem locations:
   #
@@ -65,6 +65,7 @@ def init(custom_config=nil)
   # file instead.
   possible_paths = [
     "#{lookupvar('thycotic_configpath')}/thycotic.conf",
+    "/etc/puppetlabs/puppet/thycotic.conf",
     "/etc/puppet/thycotic.conf",
     File.join(File.dirname(__FILE__), 'thycotic.conf') ]
 
