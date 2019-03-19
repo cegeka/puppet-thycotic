@@ -159,15 +159,14 @@ class Thycotic
     # * *Args*:
     #   - +cache_file+ -> File descriptor for which to change mode and owner
     #
-
-    if not system("grep -q 'docker\|lxc' /proc/1/cgroup")
+    if File.readlines("/proc/1/cgroup").grep(/docker|lxc/).any?
+      return true
+    else
       owner = Etc.getpwnam(@params[:cache_owner]).uid
       group = Etc.getgrnam(@params[:cache_group]).gid
 
       FileUtils.chmod(@params[:cache_mode], cache_file)
       FileUtils.chown_R(owner, group, cache_file)
-    else
-      return true
     end
   end
   def getSecret(secretid)
