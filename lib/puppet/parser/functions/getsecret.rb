@@ -103,6 +103,8 @@ def init(custom_config=nil)
   # some defaults
   config[:serviceurl] = @cfg_file['wsdl'] if not @cfg_file['wsdl'].nil?
   config[:cache_path] = @cfg_file['cache_path'] if not @cfg_file['cache_path'].nil?
+  config[:cache_owner] = @cfg_file['cache_owner'] if not @cfg_file['cache_owner'].nil?
+  config[:cache_group] = @cfg_file['cache_group'] if not @cfg_file['cache_group'].nil?
   config[:domain]     = @cfg_file['domain'] if not @cfg_file['domain'].nil?
   config[:debug]      = true if @cfg_file['debug'] == 'true'
 
