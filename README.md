@@ -23,7 +23,7 @@ Secret Server and accessing them like this ::
     file { '/etc/mypassword':
       content => getsecret('12345','plaintext_password');
     }
-
+    
 ##  Under the hood
 
 ### Thycotic API Access
@@ -75,7 +75,7 @@ Create the configuration file `/etc/puppet/thycotic.conf`
     username = username
     password = password
     orgcode = orgCode
-
+    
     # Optional parameters (defaults shown here)
     # debug = false
     # cache_path = /tmp
@@ -108,7 +108,7 @@ that you'd like to pull down.
     file { '/etc/mypassword':
       content => getsecret('12345','plaintext_password');
     }
-
+    
 In the event that you need to have multiple Thycotic configuration files, you
 can do this by passing the configuration file option in as the third parameter.
 There is a performance penalty to this, as each time the getsecret() method
@@ -119,4 +119,3 @@ intensive.
     file { '/etc/mypassword':
       content => getsecret('12345', 'plaintext_password', '/etc/thycotic.conf')
     }
-

@@ -62,6 +62,11 @@ CACHE_DEFAULT_OWNER='puppet'
 CACHE_DEFAULT_GROUP='puppet'
 CACHE_DEFAULT_MODE=0750
 DOMAIN_DEFAULT=''
+CONNECT_TIMEOUT=60 # [sec]
+SEND_TIMEOUT=120 # [sec]
+RECEIVE_TIMEOUT=60 # [sec]
+SSL_VERIFY_MODE='OpenSSL::SSL::VERIFY_NONE' # secretserver has a bad cert
+SANITIZE_CONTENT=true
 
 # For reliability during startup we store a local copy of the Secret Server
 # SOAP file named 'WSDL'. This is the default file used during startup and
@@ -93,13 +98,18 @@ class Thycotic
   def initialize(params)
     # Fill in any missing parameters to the supplied parameters hash
     @params = params
-    @params[:serviceurl]  ||= SERVICEURL
-    @params[:cache_path]  ||= CACHE_PATH
-    @params[:debug]       ||= false
-    @params[:cache_owner] ||= CACHE_DEFAULT_OWNER
-    @params[:cache_group] ||= CACHE_DEFAULT_GROUP
-    @params[:cache_mode]  ||= CACHE_DEFAULT_MODE
-    @params[:domain]      ||= DOMAIN_DEFAULT
+    @params[:serviceurl]       ||= SERVICEURL
+    @params[:cache_path]       ||= CACHE_PATH
+    @params[:debug]            ||= false
+    @params[:cache_owner]      ||= CACHE_DEFAULT_OWNER
+    @params[:cache_group]      ||= CACHE_DEFAULT_GROUP
+    @params[:cache_mode]       ||= CACHE_DEFAULT_MODE
+    @params[:domain]           ||= DOMAIN_DEFAULT
+    @params[:connect_timeout]  ||= CONNECT_TIMEOUT
+    @params[:send_timeout]     ||= SEND_TIMEOUT
+    @params[:receive_timeout]  ||= RECEIVE_TIMEOUT
+    @params[:ssl_verify_mode]  ||= SSL_VERIFY_MODE
+    @params[:sanitize_content] ||= SANITIZE_CONTENT
 
     # If debug logging is enabled, we log out our entire parameters dict,
     # including the password/username that were supplied. Debug mode is
@@ -346,6 +356,10 @@ class Thycotic
             content = s['Value']
           end
 
+          if @params[:sanitize_content] == true
+            content = Utils.sanitize_content(content)
+          end
+
           # If the content is 'nil', then the secret cannot possibly have
           # held a value, so it must be bogus return data. Even an empty
           # secret will return a blank string.
@@ -545,6 +559,16 @@ class Thycotic
     max_tries = 3
     begin
       @driver = SOAP::WSDLDriverFactory.new(@params[:serviceurl]).create_rpc_driver
+
+      # Increase the timeout on the http module when making calls to the secret server
+      @driver.options["protocol.http.connect_timeout"]        = @params[:connect_timeout]
+      @driver.options["protocol.http.send_timeout"]           = @params[:send_timeout]
+      @driver.options["protocol.http.receive_timeout"]        = @params[:receive_timeout]
+
+      if not @params[:ssl_verify_mode].empty?
+        @driver.options["protocol.http.ssl_config.verify_mode"] = @params[:ssl_verify_mode]
+      end
+
       return @driver
     rescue Exception=>e
       log("Could not create SOAP Driver from URL #{@params[:serviceurl]}: #{e}")
@@ -556,5 +580,16 @@ class Thycotic
       log("Failed to log into #{@params[:serviceurl]}. Returning 'nil' object for now.")
       return nil
     end
+  end
+end
+
+class Utils
+  def self.sanitize_content(content)
+    # Return only characters in the string which are not zero-width space
+    #
+    # * *Args*:
+    #   - +content+ -> String content which are to be sanitized
+    #
+    return content.gsub(/[\u180e\u200b\u200f\ufeff]/, '')
   end
 end
