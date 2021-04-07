@@ -62,7 +62,7 @@ Puppet::Functions.create_function(:thycotic_lookup_secret) do
   # The main function, this will fetch the secret
   def thycotic_lookup_secret(key, options, context)
     # We're only interested in keys that match with 'thycotic::lookup::<secret_id>::<field_name>'
-    regexp = Regexp.new(/thycotic::lookup::(?<secretid>[0-9]+)::(?<fieldname>[a-zA-Z0-9]+)/)
+    regexp = Regexp.new(/thycotic::lookup::(?<secretid>[0-9]+)::(?<fieldname>[a-zA-Z0-9\s]+)/)
 
     if !key.match(regexp)
       context.not_found
