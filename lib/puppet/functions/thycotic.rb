@@ -169,7 +169,7 @@ class Thycotic
     # * *Args*:
     #   - +cache_file+ -> File descriptor for which to change mode and owner
     #
-    if File.readlines("/proc/1/cgroup").grep(/docker|lxc/).any?
+    if File.readlines("/proc/1/cgroup").grep(/docker|lxc|crio/).any?
       return true
     else
       owner = Etc.getpwnam(@params[:cache_owner]).uid
