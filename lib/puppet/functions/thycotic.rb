@@ -201,7 +201,7 @@ class Thycotic
     if not $secret
       # Finally, if we got here then we raise an exception. We couldn't get the
       # secret value from any of the sources.
-      raise "Could not retrieve secret from short or long term cache, " \
+      raise "Could not retrieve secret with ID #{secretid} from short or long term cache, " \
             "or the API services. Please troubleshoot."
     end
 
