@@ -39,6 +39,7 @@ require 'puppet'
 require 'rubygems'
 require 'timeout'
 require 'yaml'
+require 'httpclient'
 
 
 # Loading the soap4r gem. This gem overrides the way SSL errors are
