@@ -316,7 +316,7 @@ class Thycotic
         if tries < max_tries
           tries = tries + 1
           log("#{tries}/#{max_tries}) Trying again...")
-          sleep(10)
+          sleep(2)
           retry
         end
         log("Failed to retrieve token for API calls.")
@@ -454,7 +454,7 @@ class Thycotic
       if tries < max_tries
         tries = tries + 1
         log("(#{tries}/#{max_tries}) Trying again...")
-        sleep(10)
+        sleep(2)
         retry
       end
 
