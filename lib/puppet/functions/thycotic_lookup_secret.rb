@@ -43,7 +43,7 @@ Puppet::Functions.create_function(:thycotic_lookup_secret) do
 
     # Now look for optional variables. If they're found, use them. If not, use
     # some defaults
-    config[:serviceurl] = @cfg_file['wsdl'] unless @cfg_file['wsdl'].nil?
+    config[:serviceurl] = @cfg_file['restapi']
     config[:cache_path] = @cfg_file['cache_path'] unless @cfg_file['cache_path'].nil?
     config[:cache_owner] = @cfg_file['cache_owner'] unless @cfg_file['cache_owner'].nil?
     config[:cache_group] = @cfg_file['cache_group'] unless @cfg_file['cache_group'].nil?

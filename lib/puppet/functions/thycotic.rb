@@ -39,19 +39,10 @@ require 'puppet'
 require 'rubygems'
 require 'timeout'
 require 'yaml'
-require 'httpclient'
-
-
-# Loading the soap4r gem. This gem overrides the way SSL errors are
-# handled in the SOAP code.
-begin
-  gem 'soap4r'
-rescue LoadError
-  gem 'soap4r-ng'
-rescue LoadError
-  gem 'soap4r-ruby1.9'
-end
-require 'soap/wsdlDriver'
+require "uri"
+require "net/http"
+require 'parseconfig'
+require "json"
 
 # Some static variables that control the overall behavior of the module
 SHORT_TERM_CACHE_TIMEOUT=21600  # 6 hours
@@ -68,16 +59,7 @@ SEND_TIMEOUT=120 # [sec]
 RECEIVE_TIMEOUT=60 # [sec]
 SSL_VERIFY_MODE='OpenSSL::SSL::VERIFY_NONE' # secretserver has a bad cert
 SANITIZE_CONTENT=true
-
-# For reliability during startup we store a local copy of the Secret Server
-# SOAP file named 'WSDL'. This is the default file used during startup and
-# configures the app to connect to the public Secret Server service. If a
-# unique WSDL URL is supplied instead, then this file is ignored.
-SERVICEURL=File.join(File.dirname(__FILE__), 'WSDL')
-SOAP_NAMESPACE='urn:thesecretserver.com'
-
-# Disable SOAP4R spurious warnings/etc.
-$VERBOSE=nil
+SERVICEURL=''
 
 # The 'thycotic' class is used to retrieve passwords/keys from the Thycotic SecretServer Online
 # by using their API.
@@ -136,10 +118,6 @@ class Thycotic
       @long_term_cache = _init_cache(
         'long-term', LONG_TERM_CACHE_NAME, LONG_TERM_CACHE_TIMEOUT)
     end
-
-    # Initialize the SOAP driver -- all uses of the driver call getDriver()
-    # but this pre-initializes it at the first use of this object.
-    getDriver()
   end
 
   def _init_cache(description, cache_name, cache_timeout)
@@ -180,6 +158,7 @@ class Thycotic
       FileUtils.chown_R(owner, group, cache_file)
     end
   end
+
   def getSecret(secretid)
     # * *Args*:
     #   - +secretid+ -> Secret ID to retrieve
@@ -305,17 +284,46 @@ class Thycotic
     # This whole thing is wrapped in a single Begin/Rescue loop because the failure
     # handling is the same no matter what. Return Nil and throw a log message.
     begin
-      params = {
-        :token    => getToken(),
-        :secretId => secretid.to_i,
-      }
-      resp = getDriver().GetSecret(params)
+      if @token.nil?
+        # If @cache.get('token') fails for any reason, we're caught by
+        # the 'rescue' statement below and a new token is generated.
+        @token = @cache.get('rest_api_token')
+      end
 
-      # First find out if we errored out for any reason. If so, fail to
-      # return a result and instead raise an exception.
-      if not resp['GetSecretResult']['Errors']['string'].nil?
-        raise "Error retrieving Secret ID #{secretid}: "\
-              "#{resp['GetSecretResult']['Errors']['string']}"
+      tries=0
+      max_tries=3
+
+      # Do the API request for the secret that needs to be retrieved. Here we will also check if the token is still valid and if not rerequest it.
+      # In case this fails we return false on the entire function with the correct response.
+      # In case we receive anything else then 200 on the call after authentication, we a raise an error
+      begin
+        url = URI("#{@params[:serviceurl]}/api/v2/secrets/#{secretid}")
+
+        https = Net::HTTP.new(url.host, url.port)
+        https.use_ssl = true
+
+        request = Net::HTTP::Get.new(url)
+        request["Authorization"] = "Bearer #{@token}"
+
+        response = https.request(request)
+
+        if response.code == '403'
+          getToken()
+          raise
+        end
+      rescue Exception=>e
+        log("Unable to authenticate to API: #{e}")
+        if tries < max_tries
+          tries = tries + 1
+          log("#{tries}/#{max_tries}) Trying again...")
+          retry
+        end
+        log("Failed to retrieve token for API calls.")
+        return false
+      end
+
+      if response.code != '200'
+        raise "#{response.body['message']}"
       end
 
       # From Thycotic we are returned a rather large hash of all kinds of
@@ -335,9 +343,12 @@ class Thycotic
       # Define the new Hash
       secret_hash = Hash.new
 
+      result = JSON.parse(response.body)
+
       # Grab the returned data. If its an array, fine. If its not an array,
       # wrap it in one just so the .each statemebt below works.
-      secrets = resp['GetSecretResult']['Secret']['Items']['SecretItem']
+      secrets = result['items']
+
       unless secrets.kind_of?(Array)
         secrets = [secrets]
       end
@@ -347,14 +358,14 @@ class Thycotic
       secrets.each do |s|
         # Make sure the secret supplied has a field name... if not, then
         # its likely bogus data.
-        if not s['FieldDisplayName'].nil?
+        if not s['fieldName'].nil?
 
           # In the event that we're looking at a File resource, we need to
           # download the file.
-          if s['IsFile'] == 'true'
-            content = getFile(secretid, s['Id'])
+          if s['isFile'] == true
+            content = getFile(secretid, s['slug'])
           else
-            content = s['Value']
+            content = s['itemValue']
           end
 
           if @params[:sanitize_content] == true
@@ -366,8 +377,8 @@ class Thycotic
           # secret will return a blank string.
           if not content.nil?
             log("Got secret content for Secret ID " \
-                 "(#{secretid}/#{s['FieldDisplayName']})...\n")
-            secret_hash[s['FieldDisplayName']] = content
+                 "(#{secretid}/#{s['fieldName']})...\n")
+            secret_hash[s['fieldName']] = content
           end
         end
       end
@@ -386,7 +397,7 @@ class Thycotic
     return secret_hash
   end
 
-  def getFile(secretid, fileid)
+  def getFile(secretid, slug)
     # This method retreives file contents from the Secret Server with
     # the supplied Secret ID and FileID. This is meant to be used
     # as an internal method by the getSecret() method.
@@ -405,36 +416,34 @@ class Thycotic
     tries = 0
     max_tries = 3
     begin
-      # Parameters for our SOAP request
-      params = {
-        :token        => getToken(),
-        :secretId     => secretid,
-        :secretItemId => fileid,
-      }
-      resp = getDriver().DownloadFileAttachmentByItemId(params)
+      url = URI("#{@params[:serviceurl]}/api/v1/secrets/#{secretid}/fields/#{slug}")
+
+      https = Net::HTTP.new(url.host, url.port)
+      https.use_ssl = true
+
+      request = Net::HTTP::Get.new(url)
+      request["Authorization"] = "Bearer #{@token}"
+
+      response = https.request(request)
 
       # First find out if we errored out for any reason. If so, fail to
       # return a result and instead raise an exception.
-      error = resp['DownloadFileAttachmentByItemIdResult']['Errors']['string']
-      if error.to_s == 'File attachment not found.'
+      if response.code == '404'
         # There is no atual data to return, but this is not a bad thing. There simply is no
         # key... so return false.
-        log("SecretItemId #{fileid} empty, returning empty string.")
+        log("SecretItemId #{slug} empty, returning empty string.")
         return ''
       end
 
-      if not error.nil?
-        raise "Error retrieving SecretItemId #{fileid}, Secret #{secretid}: " \
+      if response.code != '200'
+        raise "Error retrieving SecretItemId #{slug}, Secret #{secretid}: " \
               "#{error}"
       end
 
-      # Return the Base64 decoded contents of the FileAttachment data
-      encoded_contents = resp['DownloadFileAttachmentByItemIdResult']['FileAttachment']
-      decoded_contents = Base64.decode64(encoded_contents).to_s
-      log("SecretItemId #{fileid} file retrieved...\n")
-      return decoded_contents
+      log("SecretItemId #{slug} file retrieved...\n")
+      return response.body
     rescue Exception=>e
-      log("SecretItemId #{fileid} retrieval failed: #{e}")
+      log("SecretItemId #{slug} retrieval failed: #{e}")
       if tries < max_tries
         tries = tries + 1
         log("(#{tries}/#{max_tries}) Trying again...")
@@ -442,7 +451,7 @@ class Thycotic
       end
 
       # If we tried too many times, raise an exception.
-      raise "SecretItemId #{fileid} retrieval failed too many times: #{e}"
+      raise "SecretItemId #{slug} retrieval failed too many times: #{e}"
     end
   end
 
@@ -460,127 +469,33 @@ class Thycotic
   end
 
   def getToken()
-    # Check if we have a token available in the cache or not.
-    #
-    # *Returns* :
-    #   - A string representing the current authenticated login token
-    #
 
-    # This entire method is basically wrapped in a begin/rescue block
-    # so we can easily catch errors in the @cache calls as well as the
-    # getTokenIsValid() call to the remote service. Basically any failure
-    # here will raise an exception and trigger a new API token to be
-    # retrieved.
+    username = @params[:username]
+    password = @params[:password]
+    api_url  = @params[:serviceurl]
 
-    begin
-      # To save back-and-forth calls to the API, once this object has a
-      # authentication token, we store it locally in the object as an
-      # object level variable.
-      #
-      # If a local token has already been saved to the object, move
-      # on to checking whether or not its valid.
-      if @token.nil?
-        # If @cache.get('token') fails for any reason, we're caught by
-        # the 'rescue' statement below and a new token is generated.
-        @token = @cache.get('token')
-      end
+    url = URI("#{api_url}/oauth2/token")
 
-      # TODO(mwise): Provide some super-short term cache on the token
-      # validity. if it was valid within the last XX seconds, don't
-      # bother checking its validity again.
+    https = Net::HTTP.new(url.host, url.port)
+    https.use_ssl = true
 
-      # Now, check if the token is valid or not...
-      resp = getDriver().GetTokenIsValid(:token => @token)
-      if resp['GetTokenIsValidResult']['Errors']['string'].nil?
-        log("Found valid token")
-        return @token
-      else
-        log("Found expired token in cache, fetching new...")
-        raise
-      end
-    rescue
-      # Create the parameters used to generate a login token
-      parameters = {
-        :username     => @params[:username],
-        :password     => @params[:password],
-        :organization => @params[:orgcode],
-        :domain       => @params[:domain],
-      }
+    request = Net::HTTP::Post.new(url)
+    request["Content-Type"] = "application/x-www-form-urlencoded"
+    request.body = "username=#{username}&password=#{password}&grant_type=password"
 
-      tries=0
-      max_tries=3
-      begin
-        data = getDriver().Authenticate(parameters)
-        token = data['AuthenticateResult']['Token']
-        log("Fetched new token #{token}...")
-      rescue Exception=>e
-        log("Could not retrieve authentication token: #{e}")
-        if tries < max_tries
-          tries = tries + 1
-          log("#{tries}/#{max_tries}) Trying again...")
-          retry
-        end
-        raise 'Failed to retrieve token.'
-      end
+    response = https.request(request)
+    result = JSON.parse(response.body)
 
-      # Save the token to our local object to prevent getting it again
-      @token = token
+    # Save the token to our local object to prevent getting it again
+    @token = result["access_token"]
 
-      # Before returning the token, cache it (if there is a local cache)
-      if not @cache.nil?
-        log("Saving token to cache...")
-        @cache.set('token', @token)
-      end
-
-      # Now return the token
-      return token
-    end
-  end
-
-  def getDriver()
-    # This method initializes the SOAP driver if it has not already been
-    # configured. The first time this method runs it conncts to the remove
-    # service WSDL page and dynamically generates the SOAP methods that
-    # can be used. This can take a second, but is only done once.
-    #
-    # If the initial connection fails multiple times, we give up. Future
-    # calls to getDriver() will try again automatically.
-    #
-    # *Returns* :
-    #   - A SOAP Driver object configured with the remote service APIs
-
-    # If the driver is already setup, just return quietly
-    if not @driver.nil?
-      return @driver
+    # Before returning the token, cache it (if there is a local cache)
+    if not @cache.nil?
+      log("Saving token to cache...")
+      @cache.set('rest_api_token', @token)
     end
 
-    # Configure the basic WSDL Soap Driver. This initializes the driver
-    # and then downloads all of the methods from the provider.
-    tries = 0
-    max_tries = 3
-    begin
-      @driver = SOAP::WSDLDriverFactory.new(@params[:serviceurl]).create_rpc_driver
-
-      # Increase the timeout on the http module when making calls to the secret server
-      @driver.options["protocol.http.connect_timeout"]        = @params[:connect_timeout]
-      @driver.options["protocol.http.send_timeout"]           = @params[:send_timeout]
-      @driver.options["protocol.http.receive_timeout"]        = @params[:receive_timeout]
-
-      if not @params[:ssl_verify_mode].empty?
-        @driver.options["protocol.http.ssl_config.verify_mode"] = @params[:ssl_verify_mode]
-      end
-
-      return @driver
-    rescue Exception=>e
-      log("Could not create SOAP Driver from URL #{@params[:serviceurl]}: #{e}")
-      if tries < max_tries
-        tries = tries + 1
-        log("(#{tries}/#{max_tries}) Trying again...")
-        retry
-      end
-      log("Failed to log into #{@params[:serviceurl]}. Returning 'nil' object for now.")
-      return nil
-    end
+    return result["access_token"]
   end
 end
 

@@ -1,3 +1,8 @@
+# 2024-09-24 Changes made to use REST API instead of SOAP
+We mad ea number of changes to this module to ensure it no longer uses soap calls to retrieve secrets but instead uses the REST API. This module is no longer maintained by its original creator and thus is now managed by us for future issues.
+
+
+
 # Puppet Plugin: Thycotic Secret Getter
 
 This Puppet plugin allows you to access *secrets* from the Thycotic Secret
