@@ -296,12 +296,12 @@ class Thycotic
       # Do the API request for the secret that needs to be retrieved. Here we will also check if the token is still valid and if not rerequest it.
       # In case this fails we return false on the entire function with the correct response.
       # In case we receive anything else then 200 on the call after authentication, we a raise an error
+
+      url = URI("#{@params[:serviceurl]}/api/v2/secrets/#{secretid}")
+      https = Net::HTTP.new(url.host, url.port)
+      https.use_ssl = true
+
       begin
-        url = URI("#{@params[:serviceurl]}/api/v2/secrets/#{secretid}")
-
-        https = Net::HTTP.new(url.host, url.port)
-        https.use_ssl = true
-
         request = Net::HTTP::Get.new(url)
         request["Authorization"] = "Bearer #{@token}"
 
@@ -316,6 +316,7 @@ class Thycotic
         if tries < max_tries
           tries = tries + 1
           log("#{tries}/#{max_tries}) Trying again...")
+          sleep(10)
           retry
         end
         log("Failed to retrieve token for API calls.")
@@ -343,10 +344,16 @@ class Thycotic
       # Define the new Hash
       secret_hash = Hash.new
 
-      result = JSON.parse(response.body)
+      # Check if returned body is able to be parsed to JSON
+      begin
+        result = JSON.parse(response.body)
+      rescue JSON::ParserError => e
+        log("Error parsing request from API to JSON format")
+        return false
+      end
 
       # Grab the returned data. If its an array, fine. If its not an array,
-      # wrap it in one just so the .each statemebt below works.
+      # wrap it in one just so the .each statement below works.
       secrets = result['items']
 
       unless secrets.kind_of?(Array)
@@ -447,6 +454,7 @@ class Thycotic
       if tries < max_tries
         tries = tries + 1
         log("(#{tries}/#{max_tries}) Trying again...")
+        sleep(10)
         retry
       end
 
@@ -468,10 +476,16 @@ class Thycotic
     end
   end
 
+  # The following function will request a token from the oath endpoint of the pim API. This token will be used in the rest of the retrieval procedure of a secret.
+  # initially it gets credentials and the API url from our thycotic.conf file.
+  # This is then used to request the bearer token. If the return code of the request is 200, it returns the token, otherwise it raises an error that it was not able
+  # to retrieve a token
+  # We also set the @token value here as this is an instance var and will be used later on for easier use. We also add the token to the short term cache
+  # This is so we don't always request a new token everytime we query pim
   def getToken()
 
-    username = @params[:username]
-    password = @params[:password]
+    username = CGI.escape(@params[:username])
+    password = CGI.escape(@params[:password])
     api_url  = @params[:serviceurl]
 
     url = URI("#{api_url}/oauth2/token")
@@ -484,6 +498,11 @@ class Thycotic
     request.body = "username=#{username}&password=#{password}&grant_type=password"
 
     response = https.request(request)
+
+    if response.code != '200'
+      raise "Unable to retrieve authentication token"
+    end
+
     result = JSON.parse(response.body)
 
     # Save the token to our local object to prevent getting it again

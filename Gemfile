@@ -1,7 +1,7 @@
 source "https://rubygems.org"
 
 # Required for unit testing
-gem 'puppet', '< 4.0.0'
+gem 'puppet'
 gem 'facter'
 gem 'rake'
 gem 'rspec-puppet'
