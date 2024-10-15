@@ -370,7 +370,11 @@ class Thycotic
           # In the event that we're looking at a File resource, we need to
           # download the file.
           if s['isFile'] == true
-            content = getFile(secretid, s['slug'])
+            if s['filename'] == ""
+              content = ""
+            else
+              content = getFile(secretid, s['slug'])
+            end
           else
             content = s['itemValue']
           end
