@@ -300,16 +300,28 @@ class Thycotic
       url = URI("#{@params[:serviceurl]}/api/v2/secrets/#{secretid}")
       https = Net::HTTP.new(url.host, url.port)
       https.use_ssl = true
+      https.verify_mode = eval(@params[:ssl_verify_mode]) if @params[:ssl_verify_mode]
+      https.open_timeout = @params[:connect_timeout] if @params[:connect_timeout]
+      https.read_timeout = @params[:receive_timeout] if @params[:receive_timeout]
 
       begin
+        # Ensure we have a valid token
+        if @token.nil?
+          log("No token available, getting new token...")
+          @token = getToken()
+        end
+        
         request = Net::HTTP::Get.new(url)
         request["Authorization"] = "Bearer #{@token}"
+        log("Making API request to: #{url} with token")
 
         response = https.request(request)
 
         if response.code == '403'
-          getToken()
-          raise
+          log("Token expired (403), getting new token...")
+          @token = getToken()
+          request["Authorization"] = "Bearer #{@token}"
+          response = https.request(request)
         end
       rescue Exception=>e
         log("Unable to authenticate to API: #{e}")
@@ -324,7 +336,12 @@ class Thycotic
       end
 
       if response.code != '200'
-        raise "#{response.body['message']}"
+        begin
+          error_data = JSON.parse(response.body)
+          raise "#{error_data['message'] || response.body}"
+        rescue JSON::ParserError
+          raise "HTTP #{response.code}: #{response.body}"
+        end
       end
 
       # From Thycotic we are returned a rather large hash of all kinds of
@@ -431,6 +448,9 @@ class Thycotic
 
       https = Net::HTTP.new(url.host, url.port)
       https.use_ssl = true
+      https.verify_mode = eval(@params[:ssl_verify_mode]) if @params[:ssl_verify_mode]
+      https.open_timeout = @params[:connect_timeout] if @params[:connect_timeout]
+      https.read_timeout = @params[:receive_timeout] if @params[:receive_timeout]
 
       request = Net::HTTP::Get.new(url)
       request["Authorization"] = "Bearer #{@token}"
@@ -496,15 +516,23 @@ class Thycotic
 
     https = Net::HTTP.new(url.host, url.port)
     https.use_ssl = true
+    https.verify_mode = eval(@params[:ssl_verify_mode]) if @params[:ssl_verify_mode]
+    https.open_timeout = @params[:connect_timeout] if @params[:connect_timeout]
+    https.read_timeout = @params[:receive_timeout] if @params[:receive_timeout]
 
     request = Net::HTTP::Post.new(url)
     request["Content-Type"] = "application/x-www-form-urlencoded"
     request.body = "username=#{username}&password=#{password}&grant_type=password"
 
+    log("Making token request to: #{url}")
+    log("Request body: #{request.body}")
     response = https.request(request)
+    
+    log("Token response code: #{response.code}")
+    log("Token response body: #{response.body}")
 
     if response.code != '200'
-      raise "Unable to retrieve authentication token"
+      raise "Unable to retrieve authentication token: HTTP #{response.code} - #{response.body}"
     end
 
     result = JSON.parse(response.body)
