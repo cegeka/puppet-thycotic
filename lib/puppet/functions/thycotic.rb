@@ -317,8 +317,8 @@ class Thycotic
 
         response = https.request(request)
 
-        if response.code == '403'
-          log("Token expired (403), getting new token...")
+        if response.code =~ /^4\d{2}$/
+          log("Token expired (4xx HTTP response code), getting new token...")
           @token = getToken()
           request["Authorization"] = "Bearer #{@token}"
           response = https.request(request)
