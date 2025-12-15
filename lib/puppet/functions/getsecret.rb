@@ -168,7 +168,7 @@ module Puppet::Parser::Functions
         end
       end
 
-      raise Puppet::ParseError, "Could not retrieve SecretID #{secret_id}."
+      raise Puppet::ParseError, "Could not retrieve #{secret_name} from SecretID #{secret_id}."
     end
   end
 end
