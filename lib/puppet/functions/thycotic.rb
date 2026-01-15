@@ -140,24 +140,24 @@ class Thycotic
 
     # Create the file, set ownership and mode.
     cache = FileCache.new(cache_name, @params[:cache_path], cache_timeout)
-    _update_cache_permissions(cache_file)
+    #_update_cache_permissions(cache_file)
     return cache
   end
 
-  def _update_cache_permissions(cache_file)
-    # * *Args*:
-    #   - +cache_file+ -> File descriptor for which to change mode and owner
-    #
-    if File.readlines("/proc/1/cgroup").grep(/docker|lxc|crio/).any?
-      return true
-    else
-      owner = Etc.getpwnam(@params[:cache_owner]).uid
-      group = Etc.getgrnam(@params[:cache_group]).gid
+  # def _update_cache_permissions(cache_file)
+  #   # * *Args*:
+  #   #   - +cache_file+ -> File descriptor for which to change mode and owner
+  #   #
+  #   if File.readlines("/proc/1/cgroup").grep(/docker|lxc|crio/).any?
+  #     return true
+  #   else
+  #     owner = Etc.getpwnam(@params[:cache_owner]).uid
+  #     group = Etc.getgrnam(@params[:cache_group]).gid
 
-      FileUtils.chmod(@params[:cache_mode], cache_file)
-      FileUtils.chown_R(owner, group, cache_file)
-    end
-  end
+  #     FileUtils.chmod(@params[:cache_mode], cache_file)
+  #     FileUtils.chown_R(owner, group, cache_file)
+  #   end
+  # end
 
   def getSecret(secretid)
     # * *Args*:
@@ -175,8 +175,8 @@ class Thycotic
     #   - An exception in the event that the secret cannot be retrieved
     #
     $secret = (getSecretFromCache(@cache, secretid) ||
-               getAndCacheSecretFromAPI(secretid) ||
-               getSecretFromCache(@long_term_cache, secretid))
+           getAndCacheSecretFromAPI(secretid) ||
+           getSecretFromCache(@long_term_cache, secretid))
 
     if not $secret
       # Finally, if we got here then we raise an exception. We couldn't get the
@@ -260,7 +260,7 @@ class Thycotic
       log("Failed saving Secret ID #{secretid} to #{cache_name}: #{e}.")
     end
 
-    _update_cache_permissions(cache_name)
+    #_update_cache_permissions(cache_name)
   end
 
   def getAndCacheSecretFromAPI(secretid)
