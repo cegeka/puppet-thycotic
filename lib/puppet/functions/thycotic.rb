@@ -175,8 +175,8 @@ class Thycotic
     #   - An exception in the event that the secret cannot be retrieved
     #
     $secret = (getSecretFromCache(@cache, secretid) ||
-           getAndCacheSecretFromAPI(secretid) ||
-           getSecretFromCache(@long_term_cache, secretid))
+               getAndCacheSecretFromAPI(secretid) ||
+               getSecretFromCache(@long_term_cache, secretid))
 
     if not $secret
       # Finally, if we got here then we raise an exception. We couldn't get the
