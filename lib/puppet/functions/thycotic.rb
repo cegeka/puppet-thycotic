@@ -76,6 +76,7 @@ class Thycotic
   #                     (default: https://www.secretserveronline.com/webservices/SSWebService.asmx)
   #     - +debug+ -> Should debug logging be enabled (strongly recommend you disable this, very insecure!)
   #                (default: false)
+  #     - +log_stdout+ -> log to stdout, handy to debug issues consuming PIM secrets but can potentially expose sensitive information, use for local debug only.
   #     - +cache_path+ -> Filesystem location to cache results (default: /tmp)
   #
   def initialize(params)
@@ -93,6 +94,9 @@ class Thycotic
     @params[:receive_timeout]  ||= RECEIVE_TIMEOUT
     @params[:ssl_verify_mode]  ||= SSL_VERIFY_MODE
     @params[:sanitize_content] ||= SANITIZE_CONTENT
+
+    log("log_stdout enabled.")
+    log("params: #{@params}")
 
     # If debug logging is enabled, we log out our entire parameters dict,
     # including the password/username that were supplied. Debug mode is
@@ -174,6 +178,7 @@ class Thycotic
     # * *Raises*:
     #   - An exception in the event that the secret cannot be retrieved
     #
+    log("--- Called getSecret(#{secretid}) --------------------------------------------------")
     $secret = (getSecretFromCache(@cache, secretid) ||
                getAndCacheSecretFromAPI(secretid) ||
                getSecretFromCache(@long_term_cache, secretid))
@@ -206,6 +211,8 @@ class Thycotic
     # Quick check. If the supplied cache object is nil, or the secret
     # id is nil, then just return nil.
     if cache.nil? or secretid.nil?
+      # supplumental debug message if somehow both cache object and secret id are nil
+      log("getSecretFromCache() with #{secretid}: cache object and secret id are both nil")
       return false
     end
 
@@ -215,9 +222,14 @@ class Thycotic
     # Attempt to get the Secret ID from the cache now
     log("Getting #{secretid} from #{cache_name}")
     begin
-      return YAML::load(cache.get(secretid))
+      # assign loaded value to var so we can return it after a debug message
+      cached_secret = YAML::load(cache.get(secretid))
+      # debug message, assuming variable assignment did not fail, we do not end up in rescue
+      log("getSecretFromCache() with #{secretid}: found in cache")
+      # return cached secret
+      return cached_secret
     rescue Exception => e
-      log("Secret ID #{secretid} not found in #{cache_name}.")
+      log("getSecretFromCache() with #{secretid}: not found in #{cache_name}.")
       return false
     end
   end
@@ -310,12 +322,14 @@ class Thycotic
           log("No token available, getting new token...")
           @token = getToken()
         end
-        
+     
         request = Net::HTTP::Get.new(url)
         request["Authorization"] = "Bearer #{@token}"
         log("Making API request to: #{url} with token")
 
         response = https.request(request)
+
+        log("API response code: #{response.code}")
 
         if response.code =~ /^4\d{2}$/
           log("Token expired (4xx HTTP response code), getting new token...")
@@ -336,6 +350,8 @@ class Thycotic
       end
 
       if response.code != '200'
+        log("API response code #{response.code} != 200")
+        log("API response body: #{response.body}")
         begin
           error_data = JSON.parse(response.body)
           raise "#{error_data['message'] || response.body}"
@@ -360,6 +376,7 @@ class Thycotic
 
       # Define the new Hash
       secret_hash = Hash.new
+      log("getAndCacheSecretFromAPI() secret_hash:  #{secret_hash}")
 
       # Check if returned body is able to be parsed to JSON
       begin
@@ -391,13 +408,16 @@ class Thycotic
               content = ""
             else
               content = getFile(secretid, s['slug'])
+              # log("secret file content: #{content}") # disabled to not leak secret content
             end
           else
             content = s['itemValue']
+            # log("secret item value: #{content}") # disabled to not leak secret content
           end
 
           if @params[:sanitize_content] == true
             content = Utils.sanitize_content(content)
+            # log("sanitized secret content: #{content}") # disabled to not leak secret content
           end
 
           # If the content is 'nil', then the secret cannot possibly have
@@ -418,10 +438,12 @@ class Thycotic
     # Attempt to save the secrets to our local cache. These methods do not
     # ever raise an exception. If they occationally fail, they swallow the
     # exception and move on.
+    log("saving secret id #{secretid} to cache")
     saveSecretToCache(@cache,secretid,secret_hash)
     saveSecretToCache(@long_term_cache,secretid,secret_hash)
 
     # If we got here, we got the secret. Returning it
+    # log("secret_hash: #{secret_hash}") # disabled to not leak secret content
     return secret_hash
   end
 
@@ -467,6 +489,8 @@ class Thycotic
       end
 
       if response.code != '200'
+        log("Error retrieving SecretItemId #{slug}, Secret #{secretid}: " \
+              "#{error}")
         raise "Error retrieving SecretItemId #{slug}, Secret #{secretid}: " \
               "#{error}"
       end
@@ -483,6 +507,7 @@ class Thycotic
       end
 
       # If we tried too many times, raise an exception.
+      log("SecretItemId #{slug} retrieval failed too many times: #{e}")
       raise "SecretItemId #{slug} retrieval failed too many times: #{e}"
     end
   end
@@ -497,6 +522,10 @@ class Thycotic
       Puppet.warning(msg)
     else
       Puppet.debug(msg)
+    end
+
+    if @params[:log_stdout] = true
+      puts "[thycotic.rb] #{msg}"
     end
   end
 

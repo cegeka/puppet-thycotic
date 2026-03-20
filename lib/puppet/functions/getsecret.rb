@@ -111,11 +111,16 @@ module Puppet::Parser::Functions
         config[:cache_group] = @cfg_file['cache_group'] unless @cfg_file['cache_group'].nil?
         config[:domain] = @cfg_file['domain'] unless @cfg_file['domain'].nil?
         config[:debug] = true if @cfg_file['debug'] == 'true'
+        config[:log_stdout] = @cfg_file['log_stdout'] unless @cfg_file['log_stdout'].nil?
         config[:connect_timeout] = @cfg_file['connect_timeout'] unless @cfg_file['connect_timeout'].nil?
         config[:send_timeout] = @cfg_file['send_timeout'] unless @cfg_file['send_timeout'].nil?
         config[:receive_timeout] = @cfg_file['receive_timeout'] unless @cfg_file['receive_timeout'].nil?
         config[:ssl_verify_mode] = @cfg_file['ssl_verify_mode']
         config[:sanitize_content] = @cfg_file['sanitize_content'] unless @cfg_file['sanitize_content'].nil?
+
+        if config[:log_stdout] = true
+          puts "[getsecret.rb] config: #{config}"
+        end
 
         # Create the Thycotic API object
         Thycotic.new(config)
