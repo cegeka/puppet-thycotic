@@ -98,6 +98,38 @@ class Thycotic
     log("log_stdout enabled.")
     log("params: #{@params}")
 
+    # Take just the serviceurl parameter and check if there is a 3xx redirect response code header.
+    log("Validate serviceurl #{@params[:serviceurl]}")
+
+    url = URI(@params[:serviceurl])
+    https = Net::HTTP.new(url.host, url.port)
+    https.use_ssl = true
+    https.verify_mode = eval(@params[:ssl_verify_mode]) if @params[:ssl_verify_mode]
+    https.open_timeout = @params[:connect_timeout] if @params[:connect_timeout]
+    https.read_timeout = @params[:receive_timeout] if @params[:receive_timeout]
+
+    request = Net::HTTP::Get.new(url)
+    response = https.request(request)
+
+    # HTTP response codes which are indicative of an actual redirect that should be followed. E.g.:
+    # - 302: default HTTP response code for unauthenticated request, should not change the serviceurl.
+    # - 307: valid redirect that should be followed, i.e.: when Secret Server is being migrated, moved, domain/url is being altered.
+    # Other response codes have not been evaluated yet as we have not yet encountered them.
+    rewrite_redirect_codes = [307]
+
+    # If there is a HTTP response code, check if it is one defined above as one that warrants a serviceurl change.
+    # We will set the redirect location (if any) to try and gracefully recover from potential failure in the secret fetching flow.
+    if rewrite_redirect_codes.include?(response.code.to_i)
+      if response['location']
+        log("serviceurl param with value \"#{@params[:serviceurl]}\" has a #{response.code} redirect response code which is likely to break secret fetching. The serviceurl param value will be set to \"#{response['location']}\".")
+        @params[:serviceurl] = response['location']
+      else
+        log("serviceurl param with value \"#{@params[:serviceurl]}\" has a #{response.code} redirect response code but no \"location\" header. Expect secret fetching to fail.")
+      end
+    else
+      log("serviceurl param with value \"#{@params[:serviceurl]}\" has a #{response.code} response code which is not defined in the (hard-coded) rewrite_redirect_codes (#{rewrite_redirect_codes}) that are acted upon to change the serviceurl.")
+    end
+
     # If debug logging is enabled, we log out our entire parameters dict,
     # including the password/username that were supplied. Debug mode is
     # dangerous and meant to only be used during troubleshooting.
