@@ -524,7 +524,7 @@ class Thycotic
       Puppet.debug(msg)
     end
 
-    if @params[:log_stdout] = true
+    if @params[:log_stdout]
       puts "[thycotic.rb] #{msg}"
     end
   end
