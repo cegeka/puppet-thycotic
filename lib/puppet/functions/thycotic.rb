@@ -195,6 +195,31 @@ class Thycotic
   #   end
   # end
 
+  def log(msg, identifier = nil)
+    # Reports a log messsage if debugging is enabled
+    # Optionally print log messages to stdout if enabled
+    #
+    # * *Args*:
+    #   - +msg+ -> String contents of the message to report
+    #   - +identifier+ -> String contents of a helpful identifier, e.g.: filename where log() is invoked
+    #
+
+    if @params[:debug]
+      Puppet.warning(msg)
+    else
+      Puppet.debug(msg)
+    end
+
+    if @params[:log_stdout]
+      # If no identifier is set, set default value (this file name)
+      if identifier.nil?
+        identifier = 'thycotic.rb'
+      end
+      # Output identifier and msg to stdout
+      puts "[#{identifier}] #{msg}"
+    end
+  end
+
   def getSecret(secretid)
     # * *Args*:
     #   - +secretid+ -> Secret ID to retrieve
@@ -354,7 +379,7 @@ class Thycotic
           log("No token available, getting new token...")
           @token = getToken()
         end
-     
+
         request = Net::HTTP::Get.new(url)
         request["Authorization"] = "Bearer #{@token}"
         log("Making API request to: #{url} with token")
@@ -544,23 +569,6 @@ class Thycotic
     end
   end
 
-  def log(msg)
-    # Reports a log messsage if debugging is enabled
-    #
-    # * *Args*:
-    #   - +msg+ -> String contents of the message to report
-    #
-    if @params[:debug]
-      Puppet.warning(msg)
-    else
-      Puppet.debug(msg)
-    end
-
-    if @params[:log_stdout]
-      puts "[thycotic.rb] #{msg}"
-    end
-  end
-
   # The following function will request a token from the oath endpoint of the pim API. This token will be used in the rest of the retrieval procedure of a secret.
   # initially it gets credentials and the API url from our thycotic.conf file.
   # This is then used to request the bearer token. If the return code of the request is 200, it returns the token, otherwise it raises an error that it was not able
@@ -588,7 +596,7 @@ class Thycotic
     log("Making token request to: #{url}")
     log("Request body: #{request.body}")
     response = https.request(request)
-    
+
     log("Token response code: #{response.code}")
     log("Token response body: #{response.body}")
 

@@ -49,6 +49,7 @@ Puppet::Functions.create_function(:thycotic_lookup_secret) do
     config[:cache_group] = @cfg_file['cache_group'] unless @cfg_file['cache_group'].nil?
     config[:domain] = @cfg_file['domain'] unless @cfg_file['domain'].nil?
     config[:debug] = true if @cfg_file['debug'] == 'true'
+    config[:log_stdout] = @cfg_file['log_stdout'] == 'true'
     config[:connect_timeout] = @cfg_file['connect_timeout'] unless @cfg_file['connect_timeout'].nil?
     config[:send_timeout] = @cfg_file['send_timeout'] unless @cfg_file['send_timeout'].nil?
     config[:receive_timeout] = @cfg_file['receive_timeout'] unless @cfg_file['receive_timeout'].nil?
@@ -61,15 +62,6 @@ Puppet::Functions.create_function(:thycotic_lookup_secret) do
 
   # The main function, this will fetch the secret
   def thycotic_lookup_secret(key, options, context)
-    # We're only interested in keys that match with 'thycotic::lookup::<secret_id>::<field_name>'
-    regexp = Regexp.new(/thycotic::lookup::(?<secretid>[0-9]+)::(?<fieldname>[a-zA-Z0-9\s_]+)/)
-
-    if !key.match(regexp)
-      context.not_found
-    end
-    
-    # Extract the fields we're interested in
-    secret_id, secret_name = key.match(regexp).captures
 
     # Create our Thycotic object if it doesn't already exist
     # Look for our config file in a few locations (in order):
@@ -79,19 +71,39 @@ Puppet::Functions.create_function(:thycotic_lookup_secret) do
       raise Puppet::ParseError, "Could not initialize Thycotic object: #{e}"
     end
 
+    # We're only interested in keys that match with 'thycotic::lookup::<secret_id>::<field_name>'
+    regexp = Regexp.new(/thycotic::lookup::(?<secretid>[0-9]+)::(?<fieldname>[a-zA-Z0-9\s_]+)/)
+
+    if !key.match(regexp)
+      context.not_found
+    else
+      @thycotic.log("--- Called thycotic_lookup_secret() with key: #{key} ---", 'thycotic_lookup_secret.rb')
+    end
+
+    # Extract the fields we're interested in
+    secret_id, secret_name = key.match(regexp).captures
+    @thycotic.log("secret_id: #{secret_id}", 'thycotic_lookup_secret.rb')
+    @thycotic.log("secret_name: #{secret_name}", 'thycotic_lookup_secret.rb')
+
     # Now request our secret
+    @thycotic.log("#{Facter.value('fqdn')} requested #{secret_id}", 'thycotic_lookup_secret.rb')
     Puppet.debug "#{Facter.value('fqdn')} requested #{secret_id}"
+    puts("Calling @thycotic.getSecret() w/ #{secret_id}", 'thycotic_lookup_secret.rb')
     secret = @thycotic.getSecret(secret_id)
+    puts("Completed @thycotic.getSecret() w/ #{secret_id}", 'thycotic_lookup_secret.rb')
 
     # Walk through the returned elements of the hash, and look for the one we want.
     if secret.key?(secret_name)
       if secret.key?(secret_name).nil?
+        @thycotic.log("Secret returned by Thycotic.getSecret(#{secret_id}) was 'nil'. This is bad, erroring out.", 'thycotic_lookup_secret.rb')
         raise Puppet::ParseError, "Secret returned by Thycotic.getSecret(#{secret_id}) was 'nil'. This is bad, erroring out."
       else
+        @thycotic.log("Returning #{secret_name}", 'thycotic_lookup_secret.rb')
         return secret[secret_name].to_s
       end
     end
-
+    @thycotic.log("Could not retrieve SecretID #{secret_id}.", 'thycotic_lookup_secret.rb')
     raise Puppet::ParseError, "Could not retrieve SecretID #{secret_id}."
   end
+
 end
