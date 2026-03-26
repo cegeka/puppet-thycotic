@@ -252,31 +252,29 @@ class Thycotic
     if content_encoding == "ASCII-8BIT"
       log("Sanitizing ASCII-8BIT content")
       # Define array of characters to remove in ASCII-8BIT encoded content.
-      gsub_chars_ascii_8bit = ["’"]
+      sanitize_chars_ascii_8bit = ["’"]
       # Loop through array of ASCII-8BIT characters to remove.
-      for gsub_char in gsub_chars_ascii_8bit
-        log("Removing '#{gsub_char}' from ASCII-8BIT content")
-        # Force encode character to remove to ASCII-8BIT.
-        gsub_char_encoded = gsub_char.force_encoding("ASCII-8BIT")
-        content = content.gsub!(gsub_char_encoded, "")
+      for sanitize_char_ascii_8bit in sanitize_chars_ascii_8bit
+        log("Removing '#{sanitize_chars_ascii_8bit}' from ASCII-8BIT content")
+        # Force encode character to remove to ASCII-8BIT and remove it from content.
+        sanitized_content = content.gsub!(sanitize_char_ascii_8bit.force_encoding("ASCII-8BIT"), "")
       end
 
     # Sanitize UTF-8 encoded content.
     elsif content_encoding == "UTF-8"
       log("Sanitizing UTF-8 content")
       # Define array of characters to remove in UTF-8 encoded content.
-      gsub_chars_utf_8 = ["’"]
+      sanitize_chars_utf_8 = ["’"]
       # Loop through array of ASCII-8BIT characters to remove.
-      for gsub_char in gsub_chars_utf_8
-        log("Removing '#{gsub_char}' from UTF-8 content")
-        # Force encode character to remove to UTF-8.
-        gsub_char_encoded = gsub_char.force_encoding("UTF-8")
-        content = content.delete(gsub_char_encoded)
+      for sanitize_char_utf_8 in sanitize_chars_utf_8
+        log("Removing '#{sanitize_char_utf_8}' from UTF-8 content")
+        # Force encode character to UTF-8 and remove it from content.
+        sanitized_content = content.delete(sanitize_char_utf_8.force_encoding("UTF-8"))
       end
     end
     log("Content has been sanitized")
 
-    return content
+    return sanitized_content
   end
 
   def getSecret(secretid)
