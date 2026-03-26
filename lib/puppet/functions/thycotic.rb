@@ -203,13 +203,12 @@ class Thycotic
     #   - +msg+ -> String contents of the message to report
     #   - +identifier+ -> String contents of a helpful identifier, e.g.: filename where log() is invoked
     #
-
     if @params[:debug]
       Puppet.warning(msg)
     else
       Puppet.debug(msg)
     end
-
+    # Convenience stdout logging
     if @params[:log_stdout]
       # If no identifier is set, set default value (this file name)
       if identifier.nil?
@@ -218,6 +217,52 @@ class Thycotic
       # Output identifier and msg to stdout
       puts "[#{identifier}] #{msg}"
     end
+  end
+
+  def sanitize_content(content)
+    # Strip any characters which are known to cause issues.
+    #
+    # * *Args*:
+    #   - +content+ -> String content which are to be sanitized
+    #
+    # Historically this has been disabled on all environments, due to the fact that the sanitize_content configuration parameter was never evaluated properly.
+    # So enabling it with the long-standing content to gsub has an enormous blast radius so it was not applied but retained here for reference.
+    # The new gsub'd characters are known to:
+    #   - fail to write to cache file on Puppet Server where it is processed through jRuby,
+    #   - not fail in a Vagrant context as it would not pass through jRuby between API payload and cache file.
+    #   - cause such an enormous resource usage on Puppet Server, due to locking up jRuby, that it took down the whole Puppet Server.
+    #
+    # Ideally we would be able to define any and all _special_ character here that could cause issues, realistically, we currently do not
+    # know what is in place without causing issues so we cannot just remove characters and potentially impacting perfectly functional managed secret values.
+    # Unfortunately, a simple string replace won't do. Content is returned is not returned with consistent encoding, meaning that removing specific
+    # characters needs to happen based on content encoding. In some cases characters need to be provided as actual character, other encoding may require unicode codepoints.
+    #
+    # Historically set to remove not zero-width space characters. Disabled but retained as it presumably was never actively used after implementation.
+    # return content.gsub(/[\u180e\u200b\u200f\ufeff]/, '')
+    #
+    # Reference of sanitized (removed) characters:
+    # - `’` in ASCII-8BIT (binary, raw bytes) encoded content
+    #
+    # Get content encoding.
+    content_encoding = content.encoding.name
+    log("Unsanitized string is encoded as #{content_encoding}")
+    # Sanitize ASCII-8BIT encoded content.
+    if content_encoding == "ASCII-8BIT"
+      log("Sanitizing ASCII-8BIT content")
+      # Define array of characters to remove in ASCII-8BIT encoded content.
+      gsub_chars_ascii_8bit = ["’"]
+      # Loop through array of ASCII-8BIT characters to remove.
+      for gsub_char in gsub_chars_ascii_8bit
+        log("Removing '#{gsub_char}' from ASCII-8BIT content")
+        # Force encode character to remove to ASCII-8BIT.
+        gsub_char_encoded = gsub_char.force_encoding("ASCII-8BIT")
+        content = content.gsub!(gsub_char_encoded, "")
+      end
+    else
+      # Implement sanitation for other encoding
+    end
+    log("Content has been sanitized")
+    return content
   end
 
   def getSecret(secretid)
@@ -472,9 +517,10 @@ class Thycotic
             # log("secret item value: #{content}") # disabled to not leak secret content
           end
 
-          if @params[:sanitize_content] == true
-            content = Utils.sanitize_content(content)
-            # log("sanitized secret content: #{content}") # disabled to not leak secret content
+          if @params[:sanitize_content]
+            # log("Unsanitized secret content: #{content}") # disabled to not leak secret content
+            content = sanitize_content(content)
+            # log("Sanitized secret content:   #{content}") # disabled to not leak secret content
           end
 
           # If the content is 'nil', then the secret cannot possibly have
@@ -616,16 +662,5 @@ class Thycotic
     end
 
     return result["access_token"]
-  end
-end
-
-class Utils
-  def self.sanitize_content(content)
-    # Return only characters in the string which are not zero-width space
-    #
-    # * *Args*:
-    #   - +content+ -> String content which are to be sanitized
-    #
-    return content.gsub(/[\u180e\u200b\u200f\ufeff]/, '')
   end
 end

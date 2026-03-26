@@ -22,7 +22,7 @@ describe 'thycotic_getsecret' do
   end
 end
 
-describe 'Utils' do
+describe 'Thycotic' do
   describe '::sanitize_content' do
     context 'with a file with all printable characters' do
       let(:input_string) { File.read(File.dirname(__FILE__) + '/files/test_printable') }
