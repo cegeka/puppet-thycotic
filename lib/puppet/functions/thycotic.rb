@@ -236,16 +236,18 @@ class Thycotic
     # know what is in place without causing issues so we cannot just remove characters and potentially impacting perfectly functional managed secret values.
     # Unfortunately, a simple string replace won't do. Content is returned is not returned with consistent encoding, meaning that removing specific
     # characters needs to happen based on content encoding. In some cases characters need to be provided as actual character, other encoding may require unicode codepoints.
+    # It should also be noted that not all encoding should leverage the same approach to character removal.
     #
     # Historically set to remove not zero-width space characters. Disabled but retained as it presumably was never actively used after implementation.
     # return content.gsub(/[\u180e\u200b\u200f\ufeff]/, '')
     #
     # Reference of sanitized (removed) characters:
-    # - `’` in ASCII-8BIT (binary, raw bytes) encoded content
-    #
+    # - `’` in ASCII-8BIT (binary, raw bytes, commonly w/ Vagrant) encoded content as well as UTF-8 (commonly on Puppet Server) content
+
     # Get content encoding.
     content_encoding = content.encoding.name
     log("Unsanitized string is encoded as #{content_encoding}")
+
     # Sanitize ASCII-8BIT encoded content.
     if content_encoding == "ASCII-8BIT"
       log("Sanitizing ASCII-8BIT content")
@@ -258,10 +260,22 @@ class Thycotic
         gsub_char_encoded = gsub_char.force_encoding("ASCII-8BIT")
         content = content.gsub!(gsub_char_encoded, "")
       end
-    else
-      # Implement sanitation for other encoding
+
+    # Sanitize UTF-8 encoded content.
+    elsif content_encoding == "UTF-8"
+      log("Sanitizing UTF-8 content")
+      # Define array of characters to remove in UTF-8 encoded content.
+      gsub_chars_utf_8 = ["’"]
+      # Loop through array of ASCII-8BIT characters to remove.
+      for gsub_char in gsub_chars_utf_8
+        log("Removing '#{gsub_char}' from UTF-8 content")
+        # Force encode character to remove to UTF-8.
+        gsub_char_encoded = gsub_char.force_encoding("UTF-8")
+        content = content.delete(gsub_char_encoded)
+      end
     end
     log("Content has been sanitized")
+
     return content
   end
 
