@@ -88,9 +88,9 @@ Puppet::Functions.create_function(:thycotic_lookup_secret) do
     # Now request our secret
     @thycotic.log("#{Facter.value('fqdn')} requested #{secret_id}", 'thycotic_lookup_secret.rb')
     Puppet.debug "#{Facter.value('fqdn')} requested #{secret_id}"
-    puts("Calling @thycotic.getSecret() w/ #{secret_id}", 'thycotic_lookup_secret.rb')
+    @thycotic.log("Calling @thycotic.getSecret() w/ #{secret_id}", 'thycotic_lookup_secret.rb')
     secret = @thycotic.getSecret(secret_id)
-    puts("Completed @thycotic.getSecret() w/ #{secret_id}", 'thycotic_lookup_secret.rb')
+    @thycotic.log("Completed @thycotic.getSecret() w/ #{secret_id}", 'thycotic_lookup_secret.rb')
 
     # Walk through the returned elements of the hash, and look for the one we want.
     if secret.key?(secret_name)
