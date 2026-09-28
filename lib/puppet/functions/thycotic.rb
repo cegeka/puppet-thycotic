@@ -96,7 +96,6 @@ class Thycotic
     @params[:sanitize_content] ||= SANITIZE_CONTENT
 
     log("log_stdout enabled.")
-    log("params: #{@params}")
 
     # Take just the serviceurl parameter and check if there is a 3xx redirect response code header.
     log("Validate serviceurl #{@params[:serviceurl]}")
