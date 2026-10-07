@@ -61,8 +61,7 @@ SSL_VERIFY_MODE='OpenSSL::SSL::VERIFY_NONE' # secretserver has a bad cert
 SANITIZE_CONTENT=true
 SERVICEURL=''
 
-# The 'thycotic' class is used to retrieve passwords/keys from the Thycotic SecretServer Online
-# by using their API.
+# The 'thycotic' class is used to retrieve passwords/keys from the Thycotic SecretServer Online by using their API.
 class Thycotic
   # This is the class object initializer for this Thycotic interface
   #
@@ -129,9 +128,8 @@ class Thycotic
       log("serviceurl param with value \"#{@params[:serviceurl]}\" has a #{response.code} response code which is not defined in the (hard-coded) rewrite_redirect_codes (#{rewrite_redirect_codes}) that are acted upon to change the serviceurl.")
     end
 
-    # If debug logging is enabled, we log out our entire parameters dict,
-    # including the password/username that were supplied. Debug mode is
-    # dangerous and meant to only be used during troubleshooting.
+    # If debug logging is enabled, we log out our entire parameters dict, including the password/username that were supplied.
+    # Debug mode is dangerous and meant to only be used during troubleshooting.
     @params.each do |k,v|
       if k != :password
         log("Initialization params: #{k} => #{v}")
@@ -195,7 +193,7 @@ class Thycotic
   # end
 
   def log(msg, identifier = nil)
-    # Reports a log messsage if debugging is enabled
+    # Reports a log message if debugging is enabled
     # Optionally print log messages to stdout if enabled
     #
     # * *Args*:
@@ -218,7 +216,7 @@ class Thycotic
     end
   end
 
-  def sanitize_content(content)
+  def sanitize_content(content, secretid, field)
     # Strip any characters which are known to cause issues.
     #
     # * *Args*:
@@ -245,33 +243,33 @@ class Thycotic
 
     # Get content encoding.
     content_encoding = content.encoding.name
-    log("Unsanitized string is encoded as #{content_encoding}")
+    log("Unsanitized string for secret #{secretid}/#{field} is encoded as #{content_encoding}")
 
     # Sanitize ASCII-8BIT encoded content.
     if content_encoding == "ASCII-8BIT"
-      log("Sanitizing ASCII-8BIT content")
+      log("Sanitizing ASCII-8BIT content of secret #{secretid}/#{field}")
       # Define array of characters to remove in ASCII-8BIT encoded content.
       sanitize_chars_ascii_8bit = ["’"]
       # Loop through array of ASCII-8BIT characters to remove.
       for sanitize_char_ascii_8bit in sanitize_chars_ascii_8bit
-        log("Removing '#{sanitize_chars_ascii_8bit}' from ASCII-8BIT content")
+        log("Removing '#{sanitize_chars_ascii_8bit}' from ASCII-8BIT content of secret #{secretid}/#{field}")
         # Force encode character to remove to ASCII-8BIT and remove it from content.
         sanitized_content = content.gsub!(sanitize_char_ascii_8bit.force_encoding("ASCII-8BIT"), "")
       end
 
     # Sanitize UTF-8 encoded content.
     elsif content_encoding == "UTF-8"
-      log("Sanitizing UTF-8 content")
+      log("Sanitizing UTF-8 content of secret #{secretid}/#{field}")
       # Define array of characters to remove in UTF-8 encoded content.
       sanitize_chars_utf_8 = ["’"]
       # Loop through array of ASCII-8BIT characters to remove.
       for sanitize_char_utf_8 in sanitize_chars_utf_8
-        log("Removing '#{sanitize_char_utf_8}' from UTF-8 content")
+        log("Removing '#{sanitize_char_utf_8}' from UTF-8 content of secret #{secretid}/#{field}")
         # Force encode character to UTF-8 and remove it from content.
         sanitized_content = content.delete(sanitize_char_utf_8.force_encoding("UTF-8"))
       end
     end
-    log("Content has been sanitized")
+    log("Content for secret #{secretid}/#{field} has been sanitized")
 
     return sanitized_content
   end
@@ -291,16 +289,14 @@ class Thycotic
     # * *Raises*:
     #   - An exception in the event that the secret cannot be retrieved
     #
-    log("--- Called getSecret(#{secretid}) --------------------------------------------------")
+    log("getSecret() called with secret ID #{secretid}")
     $secret = (getSecretFromCache(@cache, secretid) ||
                getAndCacheSecretFromAPI(secretid) ||
                getSecretFromCache(@long_term_cache, secretid))
 
     if not $secret
-      # Finally, if we got here then we raise an exception. We couldn't get the
-      # secret value from any of the sources.
-      raise "Could not retrieve secret with ID #{secretid} from short or long term cache, " \
-            "or the API services. Please troubleshoot."
+      # Finally, if we got here then we raise an exception. We couldn't get the secret value from any of the sources.
+      raise "Could not retrieve secret with ID #{secretid} from short or long term cache, or the API services. Please troubleshoot."
     end
 
     return $secret
@@ -308,9 +304,93 @@ class Thycotic
 
   private
 
+  def inspect_yaml_cache_safety(content)
+    # Inspect string content for traits that make it risky to cache through the current YAML-based file cache implementation.
+    #
+    # This is intentionally a logging/inspection helper only. It does not alter content, skip caching, or raise exceptions back to callers.
+    # Its purpose is to catalog file-backed secret fields that appear binary-like or that fail a YAML dump/load round-trip,
+    # so we can later make informed decisions about cache behavior without changing functionality in this phase.
+    #
+    # * *Args*:
+    #   - +content+ -> String content to inspect for YAML cache safety
+    #
+    # * *Returns*:
+    #   - Hash containing:
+    #     - +:risky+ -> Boolean, whether any risk indicators were detected
+    #     - +:encoding+ -> Best-effort encoding name for the content
+    #     - +:reasons+ -> Array of short reason strings describing the findings
+    result = {
+      risky: false,
+      encoding: nil,
+      reasons: []
+    }
+
+    return result if content.nil? || !content.is_a?(String)
+
+    result[:encoding] = content.encoding.name
+
+    result[:reasons] << 'invalid_encoding' unless content.valid_encoding?
+    result[:reasons] << 'ascii_8bit' if result[:encoding] == 'ASCII-8BIT'
+    result[:reasons] << 'contains_nul' if content.bytes.include?(0)
+
+    begin
+      yaml_dump = YAML.dump(content)
+    rescue Exception
+      result[:reasons] << 'yaml_dump_failed'
+      result[:risky] = true
+      return result
+    end
+
+    begin
+      yaml_loaded = YAML.load(yaml_dump)
+    rescue Exception
+      result[:reasons] << 'yaml_load_failed'
+      result[:risky] = true
+      return result
+    end
+
+    result[:reasons] << 'yaml_roundtrip_mismatch' unless yaml_loaded == content
+
+    if yaml_loaded.is_a?(String) && yaml_loaded.encoding.name != result[:encoding]
+      result[:reasons] << 'yaml_roundtrip_encoding_changed'
+    end
+
+    result[:risky] = !result[:reasons].empty?
+    result
+  rescue Exception
+    {
+      risky: true,
+      encoding: (content.encoding.name rescue 'unknown'),
+      reasons: ['cache_safety_inspection_failed']
+    }
+  end
+
+  def log_yaml_cache_safety_if_risky(content, secretid, field_name, slug, filename = nil)
+    # Emit a metadata-only log message when file-backed secret content looks unsafe to persist in the YAML cache.
+    #
+    # The log message is deliberately limited to identifiers and detection reasons. It must never include secret contents.
+    # This keeps the helper safe to use in production while still making it possible to identify which secrets/fields are likely to cause YAML cache issues.
+    #
+    # * *Args*:
+    #   - +content+ -> String content to inspect
+    #   - +secretid+ -> Secret ID for log correlation
+    #   - +field_name+ -> Human-readable field name returned by the API
+    #   - +slug+ -> Secret Server field slug
+    #   - +filename+ -> Optional filename for file-backed secret fields
+    #
+    # * *Returns*:
+    #   - Nil. Logs only when risk indicators are present.
+    inspection = inspect_yaml_cache_safety(content)
+
+    return unless inspection[:risky]
+
+    filename_fragment = filename.nil? || filename == '' ? '' : ", filename=#{filename}"
+
+    log("[CACHE SAFETY WARNING]: Secret ID #{secretid}/#{field_name} (slug=#{slug}#{filename_fragment}) may be unsafe to cache to YAML: encoding=#{inspection[:encoding]}, reasons=#{inspection[:reasons].join(', ')}")
+  end
+
   def getSecretFromCache(cache, secretid)
-    # Returns a secret from a supplied cache object. Handles any exceptions
-    # and returns either the secret, or a Nil value.
+    # Returns a secret from a supplied cache object. Handles any exceptions and returns either the secret, or a Nil value.
     #
     # * *Args*:
     #   - +cache+ -> The filecache object to search
@@ -321,8 +401,7 @@ class Thycotic
     #   - Hash containing the secret from the filecache object
     #
 
-    # Quick check. If the supplied cache object is nil, or the secret
-    # id is nil, then just return nil.
+    # Quick check. If the supplied cache object is nil, or the secret id is nil, then just return nil.
     if cache.nil? or secretid.nil?
       # supplumental debug message if somehow both cache object and secret id are nil
       log("getSecretFromCache() with #{secretid}: cache object and secret id are both nil")
@@ -348,9 +427,9 @@ class Thycotic
   end
 
   def saveSecretToCache(cache, secretid, secretvalue)
-    # Saves a supplied secret to the cache. Handles any exceptions and
-    # returns quietly. Will output debug logging during a failure, but
-    # thats it.
+    # Saves a supplied secret to the cache.
+    # Handles any exceptions and returns quietly.
+    # Will output debug logging during a failure, but thats it.
     #
     # * *Args*:
     #   - +cache+ -> The filecache object to write to
@@ -358,8 +437,7 @@ class Thycotic
     #   - +Secretvalue+ -> The secret value to store
     #
 
-    # Make sure that the three values were supplid. If any are Nil,
-    # log and exit safely.
+    # Make sure that the three values were supplid. If any are Nil, log and exit safely.
     log("Saving #{secretid} on #{cache}")
     if secretid.nil?
       log("Secret ID cannot be Nil!")
@@ -379,7 +457,7 @@ class Thycotic
 
     # Now try to save the secret to the cache. If it fails, just return.
     begin
-      log("Saving Secret ID '#{secretid}' to #{cache_name}...\n")
+      log("Saving Secret ID '#{secretid}' to #{cache_name}")
       cache.set(secretid,secretvalue.to_yaml)
     rescue Exception =>e
       log("Failed saving Secret ID #{secretid} to #{cache_name}: #{e}.")
@@ -389,9 +467,8 @@ class Thycotic
   end
 
   def getAndCacheSecretFromAPI(secretid)
-    # Contacts the API service and retreives the secret hash. Handles all
-    # exceptions and either returns a Nil value, or the hash data from
-    # the API.
+    # Contacts the API service and retrieves the secret hash.
+    # Handles all exceptions and either returns a Nil value, or the hash data from the API.
     #
     # *Args*:
     #   - +secretid+ -> Secret ID to retrieve
@@ -406,8 +483,8 @@ class Thycotic
     #       }
     #
 
-    # This whole thing is wrapped in a single Begin/Rescue loop because the failure
-    # handling is the same no matter what. Return Nil and throw a log message.
+    # This whole thing is wrapped in a single Begin/Rescue loop because the failure handling is the same no matter what.
+    # Return Nil and throw a log message.
     begin
       if @token.nil?
         # If @cache.get('token') fails for any reason, we're caught by
@@ -473,9 +550,8 @@ class Thycotic
         end
       end
 
-      # From Thycotic we are returned a rather large hash of all kinds of
-      # data, but we really only want to return a few pieces. We dynamically
-      # create a new Hash object here that looks like:
+      # From Thycotic we are returned a rather large hash of all kinds of data, but we really only want to return a few pieces.
+      # We dynamically create a new Hash object here that looks like:
       #
       # hash = {
       #   "<secret field name>" = "<secret content>"
@@ -483,9 +559,7 @@ class Thycotic
       #   "<secret field name>" = "<secret content>"
       # }
       #
-      # In the event that any of the secret items returned are references to
-      # files, we go off and get those files and put the contents of the file
-      # into the hash.
+      # In the event that any of the secret items returned are references to files, we go off and get those files and put the contents of the file into the hash.
 
       # Define the new Hash
       secret_hash = Hash.new
@@ -499,24 +573,23 @@ class Thycotic
         return false
       end
 
-      # Grab the returned data. If its an array, fine. If its not an array,
-      # wrap it in one just so the .each statement below works.
+      # Grab the returned data.
+      # If its an array, fine.
+      # If its not an array, wrap it in one just so the .each statement below works.
       secrets = result['items']
 
       unless secrets.kind_of?(Array)
         secrets = [secrets]
       end
 
-      # Now for each element returned in the SecretItems XML section add
-      # it to the above hash.
+      # Now for each element returned in the SecretItems XML section add it to the above hash.
       secrets.each do |s|
-        # Make sure the secret supplied has a field name... if not, then
-        # its likely bogus data.
+        # Make sure the secret supplied has a field name... if not, then its likely bogus data.
         if not s['fieldName'].nil?
 
-          # In the event that we're looking at a File resource, we need to
-          # download the file.
+          # In the event that we're looking at a File resource, we need to download the file.
           if s['isFile'] == true
+            log("#{secretid}/#{s['fieldName']} is marked as file in the API response")
             if s['filename'] == ""
               content = ""
             else
@@ -528,18 +601,20 @@ class Thycotic
             # log("secret item value: #{content}") # disabled to not leak secret content
           end
 
+          if s['isFile'] == true
+            log_yaml_cache_safety_if_risky(content, secretid, s['fieldName'], s['slug'], s['filename'])
+          end
+
           if @params[:sanitize_content]
             # log("Unsanitized secret content: #{content}") # disabled to not leak secret content
-            content = sanitize_content(content)
+            content = sanitize_content(content, secretid, s['slug'])
             # log("Sanitized secret content:   #{content}") # disabled to not leak secret content
           end
 
-          # If the content is 'nil', then the secret cannot possibly have
-          # held a value, so it must be bogus return data. Even an empty
-          # secret will return a blank string.
+          # If the content is 'nil', then the secret cannot possibly have held a value, so it must be bogus return data.
+          # Even an empty secret will return a blank string.
           if not content.nil?
-            log("Got secret content for Secret ID " \
-                 "(#{secretid}/#{s['fieldName']})...\n")
+            log("Got secret content for Secret ID #{secretid}/#{s['fieldName']}")
             secret_hash[s['fieldName']] = content
           end
         end
@@ -549,22 +624,21 @@ class Thycotic
       return false
     end
 
-    # Attempt to save the secrets to our local cache. These methods do not
-    # ever raise an exception. If they occationally fail, they swallow the
-    # exception and move on.
+    # Attempt to save the secrets to our local cache.
+    # These methods do not ever raise an exception.
+    # If they occasionally fail, they swallow the exception and move on.
     log("saving secret id #{secretid} to cache")
     saveSecretToCache(@cache,secretid,secret_hash)
     saveSecretToCache(@long_term_cache,secretid,secret_hash)
 
-    # If we got here, we got the secret. Returning it
+    # If we got here, we got the secret. Return it.
     # log("secret_hash: #{secret_hash}") # disabled to not leak secret content
     return secret_hash
   end
 
   def getFile(secretid, slug)
-    # This method retreives file contents from the Secret Server with
-    # the supplied Secret ID and FileID. This is meant to be used
-    # as an internal method by the getSecret() method.
+    # This method retrieves file contents from the Secret Server with the supplied Secret ID and FileID.
+    # This is meant to be used as an internal method by the getSecret() method.
     #
     # * *Args*:
     #   - +secretid+ -> The secret ID that the file belongs to
@@ -593,44 +667,43 @@ class Thycotic
 
       response = https.request(request)
 
-      # First find out if we errored out for any reason. If so, fail to
-      # return a result and instead raise an exception.
+      # First find out if we errored out for any reason.
+      # If so, fail to return a result and instead raise an exception.
       if response.code == '404'
-        # There is no atual data to return, but this is not a bad thing. There simply is no
+        # There is no actual data to return, but this is not a bad thing. There simply is no
         # key... so return false.
         log("SecretItemId #{slug} empty, returning empty string.")
         return ''
       end
 
       if response.code != '200'
-        log("Error retrieving SecretItemId #{slug}, Secret #{secretid}: " \
-              "#{error}")
-        raise "Error retrieving SecretItemId #{slug}, Secret #{secretid}: " \
-              "#{error}"
+        log("getFile() error retrieving #{secretid}/#{slug}: #{error}")
+        raise "getFile() error retrieving #{secretid}/#{slug}: #{error}"
       end
 
-      log("SecretItemId #{slug} file retrieved...\n")
+      log("getFile() #{secretid}/#{slug} file retrieved...")
       return response.body
     rescue Exception=>e
-      log("SecretItemId #{slug} retrieval failed: #{e}")
+      log("getFile #{secretid}/#{slug} retrieval failed: #{e}")
       if tries < max_tries
         tries = tries + 1
-        log("(#{tries}/#{max_tries}) Trying again...")
+        log("getFile() #{secretid}/#{slug} (#{tries}/#{max_tries}) Trying again...")
         sleep(2)
         retry
       end
 
       # If we tried too many times, raise an exception.
-      log("SecretItemId #{slug} retrieval failed too many times: #{e}")
-      raise "SecretItemId #{slug} retrieval failed too many times: #{e}"
+      log("getFile() #{secretid}/#{slug} retrieval failed too many times: #{e}")
+      raise "getFile() #{secretid}/#{slug} retrieval failed too many times: #{e}"
     end
   end
 
-  # The following function will request a token from the oath endpoint of the pim API. This token will be used in the rest of the retrieval procedure of a secret.
-  # initially it gets credentials and the API url from our thycotic.conf file.
-  # This is then used to request the bearer token. If the return code of the request is 200, it returns the token, otherwise it raises an error that it was not able
-  # to retrieve a token
-  # We also set the @token value here as this is an instance var and will be used later on for easier use. We also add the token to the short term cache
+  # The following function will request a token from the oath endpoint of the pim API.
+  # This token will be used in the rest of the retrieval procedure of a secret.
+  # Initially it gets credentials and the API url from our thycotic.conf file.
+  # This is then used to request the bearer token.
+  # If the return code of the request is 200, it returns the token, otherwise it raises an error that it was not able to retrieve a token
+  # We also set the @token value here as this is an instance var and will be used later on for easier use. We also add the token to the short term cache.
   # This is so we don't always request a new token everytime we query pim
   def getToken()
 

@@ -77,7 +77,7 @@ Puppet::Functions.create_function(:thycotic_lookup_secret) do
     if !key.match(regexp)
       context.not_found
     else
-      @thycotic.log("--- Called thycotic_lookup_secret() with key: #{key} ---", 'thycotic_lookup_secret.rb')
+      @thycotic.log("Called thycotic_lookup_secret() with key: #{key}", 'thycotic_lookup_secret.rb')
     end
 
     # Extract the fields we're interested in
